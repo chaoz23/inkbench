@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chaoz23/inkbench/blob/v0.1.0/schemas/fixture-manifest.schema.json",
+  "title": "InkBench generated fixture manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "generatorVersion", "fixtureId", "family", "seed", "difficulty", "dimensions", "parameters", "locations", "bugs"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "generatorVersion": { "const": "0.1.0" },
+    "fixtureId": { "type": "string", "minLength": 1 },
+    "family": { "$ref": "#/$defs/family" },
+    "seed": { "type": "integer" },
+    "difficulty": { "type": "integer", "minimum": 1, "maximum": 10 },
+    "dimensions": { "$ref": "#/$defs/dimensions" },
+    "parameters": { "type": "object" },
+    "locations": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+    "bugs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "family", "description", "oracle"],
+        "properties": {
+          "id": { "type": "string" },
+          "family": { "$ref": "#/$defs/family" },
+          "description": { "type": "string" },
+          "oracle": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "variable", "value"],
+            "properties": {
+              "kind": { "const": "variable-equals" },
+              "variable": { "type": "string" },
+              "value": { "type": ["boolean", "number", "string"] }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "family": {
+      "enum": ["shallow-obvious", "deep-corridor", "rare-prefix", "combination-lock", "loop-count", "revisit-after-mutation", "novelty-honeypot", "false-novelty", "delayed-consequence", "order-dependent", "compound-needle"]
+    },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["depth", "width", "stateDimensionality", "rarity", "delay", "revisit", "deception", "order"],
+      "properties": {
+        "depth": { "type": "number", "minimum": 0 },
+        "width": { "type": "number", "minimum": 0 },
+        "stateDimensionality": { "type": "number", "minimum": 0 },
+        "rarity": { "type": "number", "minimum": 0 },
+        "delay": { "type": "number", "minimum": 0 },
+        "revisit": { "type": "number", "minimum": 0 },
+        "deception": { "type": "number", "minimum": 0 },
+        "order": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}

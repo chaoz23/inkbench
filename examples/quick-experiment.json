@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "families": ["shallow-obvious", "deep-corridor", "combination-lock", "novelty-honeypot"],
+  "algorithms": ["random", "systematic", "coverage", "swarm"],
+  "fixtureSeeds": [1, 2],
+  "searchSeeds": [1, 2, 3],
+  "budgets": [100, 500],
+  "difficulty": 2,
+  "storySeed": 1
+}

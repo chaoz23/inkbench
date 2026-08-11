@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chaoz23/inkbench/blob/v0.1.0/schemas/run-report.schema.json",
+  "title": "InkBench run report v1",
+  "type": "object",
+  "required": ["schemaVersion", "runId", "fixtureId", "fixtureGeneratorVersion", "fixtureSourceSha256", "family", "algorithm", "algorithmVersion", "fixtureSeed", "searchSeed", "storySeed", "difficulty", "dimensions", "budget", "counts", "coverage", "discoveredBugs", "plantedBugIds", "timing", "runtime", "status", "error", "notes"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "runId": { "type": "string" },
+    "fixtureId": { "type": "string" },
+    "fixtureGeneratorVersion": { "type": "string" },
+    "fixtureSourceSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "family": { "type": "string" },
+    "algorithm": { "enum": ["random", "systematic", "coverage", "swarm", "inkcheck"] },
+    "algorithmVersion": { "type": "string" },
+    "fixtureSeed": { "type": "integer" },
+    "searchSeed": { "type": "integer" },
+    "storySeed": { "type": "integer", "minimum": 1 },
+    "difficulty": { "type": "integer", "minimum": 1, "maximum": 10 },
+    "dimensions": { "type": "object" },
+    "budget": {
+      "type": "object",
+      "required": ["unit", "limit"],
+      "properties": {
+        "unit": { "enum": ["choice-transitions", "inkcheck-states"] },
+        "limit": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "required": ["transitions", "launches", "rootLaunches", "episodesCompleted"],
+      "properties": {
+        "transitions": { "type": "integer", "minimum": 0 },
+        "launches": { "type": "integer", "minimum": 0 },
+        "rootLaunches": { "type": "integer", "minimum": 0 },
+        "episodesCompleted": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "coverage": { "type": ["object", "null"] },
+    "discoveredBugs": { "type": "array", "items": { "type": "object" } },
+    "plantedBugIds": { "type": "array", "items": { "type": "string" } },
+    "timing": { "type": "object" },
+    "runtime": { "type": "object" },
+    "status": { "enum": ["completed", "adapter-unavailable", "compile-error", "runtime-error"] },
+    "error": { "type": ["string", "null"] },
+    "notes": { "type": "array", "items": { "type": "string" } }
+  }
+}
