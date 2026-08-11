@@ -143,6 +143,7 @@ export function runBenchmark(request: RunRequest): RunReport {
       parallelism: { requested: 1, effective: 1, mode: "single-process" },
       stopReason,
       resources: controller.resourceUsage(stopReason),
+      adapterResources: null,
       runtime: { harnessVersion: INKBENCH_VERSION, runContractVersion: RUN_CONTRACT_VERSION, engine: "inkjs", engineVersion: "2.4.0", node: process.version, platform: `${process.platform}-${process.arch}` },
       status: stopReason === "memory" || stopReason === "work-ceiling" || (stopReason === "time" && request.timeBudgetMs === undefined)
         ? "resource-stopped"
@@ -195,6 +196,7 @@ export function runBenchmark(request: RunRequest): RunReport {
       parallelism: { requested: 1, effective: 1, mode: "single-process" },
       stopReason: "error",
       resources: controller?.resourceUsage("error") ?? null,
+      adapterResources: null,
       runtime: { harnessVersion: INKBENCH_VERSION, runContractVersion: RUN_CONTRACT_VERSION, engine: "inkjs", engineVersion: "2.4.0", node: process.version, platform: `${process.platform}-${process.arch}` },
       status: compileError ? "compile-error" : "runtime-error",
       error: message,

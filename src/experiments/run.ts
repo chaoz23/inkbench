@@ -70,13 +70,14 @@ export function writeExperiment(outputDirectory: string, result: ExperimentResul
   writeFileAtomic(join(outputDirectory, "config.json"), `${JSON.stringify(result.summary.config, null, 2)}\n`);
   if (result.cellFiles) writeNdjsonAtomicFromJsonFiles(join(outputDirectory, "runs.ndjson"), result.cellFiles);
   else writeFileAtomic(join(outputDirectory, "runs.ndjson"), `${result.runs.map((run) => JSON.stringify(run)).join("\n")}\n`);
-  const headers = ["runId", "fixtureId", "fixtureGeneratorVersion", "fixtureSourceSha256", "benchmarkTier", "family", "algorithm", "fixtureSeed", "searchSeed", "storySeed", "difficulty", "primaryBudgetUnit", "primaryBudget", "workBudgetUnit", "workBudgetLimit", "requestedParallelism", "effectiveParallelism", "parallelismMode", "status", "stopReason", "discoveryTimingBasis", "discovered", "firstDiscoveryTransition", "firstDiscoveryElapsedMs", "runtimeFindings", "transitions", "launches", "wallMs", "cpuMs", "peakHeapBytes", "peakRssBytes", "peakSnapshotBytes", "peakCheckpointBytes", "locations", "choices", "edges", "semanticStates", "rawStates"];
+  const headers = ["runId", "fixtureId", "fixtureGeneratorVersion", "fixtureSourceSha256", "benchmarkTier", "family", "algorithm", "fixtureSeed", "searchSeed", "storySeed", "difficulty", "primaryBudgetUnit", "primaryBudget", "workBudgetUnit", "workBudgetLimit", "requestedParallelism", "effectiveParallelism", "parallelismMode", "status", "stopReason", "discoveryTimingBasis", "discovered", "firstDiscoveryTransition", "firstDiscoveryElapsedMs", "runtimeFindings", "transitions", "launches", "wallMs", "cpuMs", "peakHeapBytes", "peakRssBytes", "peakSnapshotBytes", "peakCheckpointBytes", "adapterPeakTrackedHeapBytes", "adapterHeapEnvelopeBytes", "locations", "choices", "edges", "semanticStates", "rawStates"];
   const rows = result.runs.map((run) => [
     run.runId, run.fixtureId, run.fixtureGeneratorVersion, run.fixtureSourceSha256, run.benchmarkTier, run.family, run.algorithm, run.fixtureSeed, run.searchSeed, run.storySeed, run.difficulty,
     run.budget.unit, run.budget.limit, run.workBudget?.unit ?? "", run.workBudget?.limit ?? "", run.parallelism.requested ?? "", run.parallelism.effective ?? "", run.parallelism.mode,
     run.status, run.stopReason, run.discoveryTimingBasis, run.discoveredBugs.length, run.discoveredBugs[0]?.transition ?? "", run.discoveredBugs[0]?.elapsedMs ?? "", run.runtimeFindings.length,
     run.counts.transitions, run.counts.launches, run.timing.wallMs, run.timing.cpuMs ?? "", run.resources?.process.peak.heapUsedBytes ?? "",
-    run.resources?.process.peak.rssBytes ?? "", run.resources?.snapshots.peakBytes ?? "", run.resources?.snapshots.peakCheckpointBytes ?? "", run.coverage?.locations ?? "",
+    run.resources?.process.peak.rssBytes ?? "", run.resources?.snapshots.peakBytes ?? "", run.resources?.snapshots.peakCheckpointBytes ?? "",
+    run.adapterResources?.peakTrackedHeapBytes ?? "", run.adapterResources?.heapEnvelopeBytes ?? "", run.coverage?.locations ?? "",
     run.coverage?.choices ?? "", run.coverage?.edges ?? "", run.coverage?.semanticStates ?? "", run.coverage?.rawStates ?? "",
   ]);
   writeFileAtomic(join(outputDirectory, "runs.csv"), `${[headers, ...rows].map((row) => row.map(csv).join(",")).join("\n")}\n`);

@@ -71,6 +71,7 @@ export interface MutantResourceCell {
   resourceStopped: number;
   meanTransitions: number;
   meanPeakHeapBytes: number | null;
+  meanAdapterPeakTrackedHeapBytes: number | null;
   meanPeakCheckpointBytes: number | null;
 }
 
@@ -213,6 +214,7 @@ function resourceCells(runs: RunReport[], config: MutantExperimentConfig): Mutan
   for (const storyId of config.storyIds) for (const budget of config.budgets) for (const algorithm of config.algorithms) {
     const matching = runs.filter((run) => run.fixtureId === fixtureId(storyId) && run.budget.limit === budget && run.algorithm === algorithm);
     const measured = matching.filter((run) => run.resources !== null);
+    const adapterMeasured = matching.filter((run) => run.adapterResources != null);
     cells.push({
       storyId,
       algorithm,
@@ -222,6 +224,7 @@ function resourceCells(runs: RunReport[], config: MutantExperimentConfig): Mutan
       resourceStopped: matching.filter((run) => run.status === "resource-stopped").length,
       meanTransitions: mean(matching.map((run) => run.counts.transitions)),
       meanPeakHeapBytes: measured.length === 0 ? null : mean(measured.map((run) => run.resources!.process.peak.heapUsedBytes)),
+      meanAdapterPeakTrackedHeapBytes: adapterMeasured.length === 0 ? null : mean(adapterMeasured.map((run) => run.adapterResources!.peakTrackedHeapBytes)),
       meanPeakCheckpointBytes: measured.length === 0 ? null : mean(measured.map((run) => run.resources!.snapshots.peakCheckpointBytes)),
     });
   }
@@ -232,7 +235,7 @@ function validateConfig(config: MutantExperimentConfig): void {
   if (config.schemaVersion !== SCHEMA_VERSION) throw new RangeError(`schemaVersion must be ${SCHEMA_VERSION}`);
   if (config.storyIds.length === 0 || new Set(config.storyIds).size !== config.storyIds.length) throw new RangeError("storyIds must be non-empty and unique");
   if (config.algorithms.length === 0 || new Set(config.algorithms).size !== config.algorithms.length) throw new RangeError("algorithms must be non-empty and unique");
-  const algorithms = new Set<AlgorithmId>(["random", "systematic", "coverage", "swarm", "inkcheck"]);
+  const algorithms = new Set<AlgorithmId>(["random", "systematic", "coverage", "swarm-novelty", "swarm-colony", "swarm", "inkcheck"]);
   for (const algorithm of config.algorithms) if (!algorithms.has(algorithm)) throw new RangeError(`unknown algorithm: ${algorithm}`);
   if (config.searchSeeds.length === 0 || config.searchSeeds.some((seed) => !Number.isSafeInteger(seed) || seed < 0)) throw new RangeError("searchSeeds must contain non-negative safe integers");
   if (config.budgets.length === 0 || config.budgets.some((budget) => !Number.isSafeInteger(budget) || budget < 1)) throw new RangeError("budgets must contain positive safe integers");
@@ -320,7 +323,7 @@ export function renderMutantMarkdown(summary: MutantExperimentSummary): string {
     "",
     `Runs: ${summary.successfulRuns}/${summary.totalRuns} completed. Fixed-budget estimates exclude incomplete cells; resource outcomes remain visible below.`,
     "",
-    "> This tier measures 20 disclosed defects in a deterministic derivative of The Intercept. A run receives credit per distinct oracle, not merely for finding any defect.",
+    "> This tier measures disclosed defects in deterministic derivatives of pinned authored stories. A run receives credit per distinct oracle, not merely for finding any defect.",
     "",
     "## Bug yield",
     "",
@@ -348,9 +351,9 @@ export function renderMutantMarkdown(summary: MutantExperimentSummary): string {
     const patterns = Object.entries(cell.discoveryPatternCounts).sort().map(([pattern, count]) => `${pattern}: ${count}`).join(", ") || "none";
     lines.push(`| ${cell.storyId} | ${cell.budget} | ${cell.pairedRuns} | ${cell.unionDiscoveries}/${cell.bugOpportunities} | ${exclusive} | ${patterns} |`);
   }
-  lines.push("", "## Resource envelope", "", "| Story | Algorithm | Budget | Completed | Resource-stopped | Mean transitions | Peak heap MiB | Peak checkpoints MiB |", "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |");
+  lines.push("", "## Resource envelope", "", "| Story | Algorithm | Budget | Completed | Resource-stopped | Mean transitions | Harness peak heap MiB | Adapter tracked heap MiB | Peak checkpoints MiB |", "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
   for (const cell of summary.resources) {
-    lines.push(`| ${cell.storyId} | ${cell.algorithm} | ${cell.budget} | ${cell.completed}/${cell.runs} | ${cell.resourceStopped} | ${format(cell.meanTransitions)} | ${cell.meanPeakHeapBytes === null ? "n/a" : format(cell.meanPeakHeapBytes / 2 ** 20)} | ${cell.meanPeakCheckpointBytes === null ? "n/a" : format(cell.meanPeakCheckpointBytes / 2 ** 20)} |`);
+    lines.push(`| ${cell.storyId} | ${cell.algorithm} | ${cell.budget} | ${cell.completed}/${cell.runs} | ${cell.resourceStopped} | ${format(cell.meanTransitions)} | ${cell.meanPeakHeapBytes === null ? "n/a" : format(cell.meanPeakHeapBytes / 2 ** 20)} | ${cell.meanAdapterPeakTrackedHeapBytes === null ? "n/a" : format(cell.meanAdapterPeakTrackedHeapBytes / 2 ** 20)} | ${cell.meanPeakCheckpointBytes === null ? "n/a" : format(cell.meanPeakCheckpointBytes / 2 ** 20)} |`);
   }
   lines.push("");
   return `${lines.join("\n")}\n`;
@@ -367,7 +370,7 @@ export function writeMutantExperiment(outputDirectory: string, result: MutantExp
   writeFileAtomic(join(outputDirectory, "corpus-manifest.json"), `${JSON.stringify(getAuthoredPlantedCorpusManifest(), null, 2)}\n`);
   if (result.cellFiles) writeNdjsonAtomicFromJsonFiles(join(outputDirectory, "runs.ndjson"), result.cellFiles);
   else writeFileAtomic(join(outputDirectory, "runs.ndjson"), `${result.runs.map((run) => JSON.stringify(run)).join("\n")}\n`);
-  const headers = ["runId", "storyId", "algorithm", "searchSeed", "storySeed", "primaryBudgetUnit", "primaryBudget", "workBudgetUnit", "workBudgetLimit", "requestedParallelism", "effectiveParallelism", "parallelismMode", "status", "stopReason", "discoveryTimingBasis", "transitions", "bugsDiscovered", "bugFraction", "bugIds", "wallMs", "peakHeapBytes", "peakCheckpointBytes"];
+  const headers = ["runId", "storyId", "algorithm", "searchSeed", "storySeed", "primaryBudgetUnit", "primaryBudget", "workBudgetUnit", "workBudgetLimit", "requestedParallelism", "effectiveParallelism", "parallelismMode", "status", "stopReason", "discoveryTimingBasis", "transitions", "bugsDiscovered", "bugFraction", "bugIds", "wallMs", "peakHeapBytes", "peakCheckpointBytes", "adapterPeakTrackedHeapBytes", "adapterHeapEnvelopeBytes"];
   const rows = result.runs.map((run) => [
     run.runId,
     run.fixtureId.replace(/^authored-planted-/, ""),
@@ -391,6 +394,8 @@ export function writeMutantExperiment(outputDirectory: string, result: MutantExp
     run.timing.wallMs,
     run.resources?.process.peak.heapUsedBytes ?? "",
     run.resources?.snapshots.peakCheckpointBytes ?? "",
+    run.adapterResources?.peakTrackedHeapBytes ?? "",
+    run.adapterResources?.heapEnvelopeBytes ?? "",
   ]);
   writeFileAtomic(join(outputDirectory, "runs.csv"), `${[headers, ...rows].map((row) => row.map(csv).join(",")).join("\n")}\n`);
   writeFileAtomic(join(outputDirectory, "summary.json"), `${JSON.stringify(result.summary, null, 2)}\n`);

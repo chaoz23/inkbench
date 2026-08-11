@@ -18,6 +18,7 @@ export interface AuthoredPlantedCorpusCase {
   family: AuthoredStoryFamily;
   directory: string;
   mutationSet: string;
+  difficulty: number;
   source: CorpusSourceMetadata & {
     licenseSha256: string;
     upstreamSourceSha256: string;
@@ -56,9 +57,7 @@ export interface AuthoredPlantedCorpusManifest {
   corpusVersion: "authored-planted-v1";
   source: {
     cleanCorpusManifest: string;
-    cleanStoryId: string;
-    repository: string;
-    commit: string;
+    cleanStoryIds: string[];
   };
   cases: AuthoredPlantedCorpusCase[];
 }
@@ -81,6 +80,7 @@ function verifyManifest(): void {
   for (const entry of manifest.cases) {
     if (caseIds.has(entry.id)) throw new Error(`duplicate authored-planted corpus id: ${entry.id}`);
     caseIds.add(entry.id);
+    if (!Number.isSafeInteger(entry.difficulty) || entry.difficulty < 1 || entry.difficulty > 10) throw new Error(`${entry.id}: invalid difficulty`);
     validateRelativeName(entry.directory);
     validateRelativeName(entry.source.entrypoint);
     validateRelativeName(entry.source.licenseFile);
@@ -101,6 +101,7 @@ function verifyManifest(): void {
       if (!Number.isSafeInteger(bug.site.upstreamLine) || bug.site.upstreamLine < 1) throw new Error(`${bug.id}: invalid upstream line`);
     }
     if (entry.id === "the-intercept-20" && entry.bugs.length !== 20) throw new Error(`${entry.id}: expected exactly 20 planted bugs`);
+    if (entry.id === "heresy2-30" && entry.bugs.length !== 30) throw new Error(`${entry.id}: expected exactly 30 planted bugs`);
     for (const [filename, digest] of Object.entries(entry.files)) {
       validateRelativeName(filename);
       if (!SHA256.test(digest)) throw new Error(`${entry.id}: invalid SHA-256 for ${filename}`);
@@ -183,7 +184,7 @@ export function loadAuthoredPlantedFixture(id: string): AuthoredPlantedFixture {
       fixtureId: `authored-planted-${entry.id}`,
       family: entry.family,
       seed: 0,
-      difficulty: 5,
+      difficulty: entry.difficulty,
       dimensions: maxDimensions(entry.bugs),
       parameters: {
         storyId: entry.id,

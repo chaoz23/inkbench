@@ -15,6 +15,8 @@
     "corpus",
     "examples",
     "scripts/build-intercept-20.mjs",
+    "scripts/build-heresy2-30.mjs",
+    "scripts/map-authored-reachability.mjs",
     "schemas",
     "README.md",
     "CHANGELOG.md",
@@ -41,7 +43,11 @@
     "mutants:development": "node dist/cli.js mutants experiment --preset development --out artifacts/intercept-20-development --isolated --resume",
     "mutants:mature": "node dist/cli.js mutants experiment --preset mature --out artifacts/intercept-20-mature --resume",
     "mutants:marathon:20m": "node dist/cli.js mutants experiment --preset marathon-20m --out artifacts/intercept-20-marathon-20m --resume",
-    "mutants:marathon:60m": "node dist/cli.js mutants experiment --preset marathon-60m --out artifacts/intercept-20-marathon-60m --resume"
+    "mutants:marathon:60m": "node dist/cli.js mutants experiment --preset marathon-60m --out artifacts/intercept-20-marathon-60m --resume",
+    "mutants:heresy:marathon:20m": "node dist/cli.js mutants experiment --preset heresy-marathon-20m --out artifacts/heresy2-30-marathon-20m --resume",
+    "mutants:heresy:marathon:60m": "node dist/cli.js mutants experiment --preset heresy-marathon-60m --out artifacts/heresy2-30-marathon-60m --resume",
+    "mutants:heresy:ablation:20m": "node dist/cli.js mutants experiment --preset heresy-ablation-20m --out artifacts/heresy2-30-ablation-20m --resume",
+    "mutants:heresy:ablation:60m": "node dist/cli.js mutants experiment --preset heresy-ablation-60m --out artifacts/heresy2-30-ablation-60m --resume"
   },
   "keywords": [
     "ink",

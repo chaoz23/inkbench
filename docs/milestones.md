@@ -5,7 +5,7 @@
 - Versioned fixture, observation, strategy, run, and dataset schemas.
 - Seeded generators for all initial adversarial families.
 - In-process runtime with exact choice-index repro paths.
-- Random, systematic, simple coverage, and minimal InkSwarm strategies.
+- Random, systematic, simple coverage, and a minimal InkSwarm strategy.
 - Optional InkCheck CLI adapter.
 - Repeated fixed-budget experiments with raw records, probability tables, Kaplan–Meier survival points, competence maps, and complementarity.
 - Cross-platform CI and deterministic regression tests.
@@ -25,6 +25,8 @@
 
 Implemented ahead of the remaining v0.2 items: first-class planned wall-time budgets, 20/60-minute marathon presets, oracle-neutral InkCheck replay scoring, final-only timing labels for InkCheck portfolio findings, and a lazy coverage-priority heap suitable for long runs.
 
+Also implemented for the next measurement cycle: a 30-bug Heresy II derivative with exact witnesses, explicit novelty-only/colony/rogue swarm ablations, semantic-frontier closure for the colony variants, and separately labeled InkCheck tracked-heap telemetry.
+
 ## v0.3.0 — corpus expansion and adapters
 
 - Broader real public Ink story corpus with licensing/provenance records and representativeness analysis.
@@ -38,6 +40,6 @@ Only promote a mechanism after a benchmark shows the failure it addresses:
 
 1. establish minimal novelty + saturation + saved deep colonies + rogues;
 2. measure boring-corridor, casino, false-novelty, delayed, loop, revisit, and combination failures;
-3. test one mechanism at a time with ablations;
+3. test novelty-only, saved-colony, and rogue-population variants as a frozen ablation ladder;
 4. add backward frontier credit, colony yield allocation, and pruning only when paired evidence clears a preregistered threshold; and
 5. retain random/systematic floors so gains never erase critical baseline discoveries unnoticed.

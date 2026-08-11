@@ -16,7 +16,7 @@ import { listAuthoredPlantedStories, loadAuthoredPlantedFixture, loadAuthoredPla
 import { runMutantExperiment, writeMutantExperiment, type MutantExperimentConfig } from "./mutants/experiment.js";
 import { runMutantExperimentIsolated } from "./mutants/isolated.js";
 
-const ALGORITHMS: readonly AlgorithmId[] = ["random", "systematic", "coverage", "swarm", "inkcheck"];
+const ALGORITHMS: readonly AlgorithmId[] = ["random", "systematic", "coverage", "swarm-novelty", "swarm-colony", "swarm", "inkcheck"];
 
 function usage(message?: string): never {
   if (message) console.error(`error: ${message}\n`);
@@ -25,7 +25,7 @@ function usage(message?: string): never {
 Usage:
   inkbench families
   inkbench generate --family <name> [--fixture-seed N] [--difficulty N] [--out DIR]
-  inkbench run --family <name> --algorithm random|systematic|coverage|swarm|inkcheck
+  inkbench run --family <name> --algorithm random|systematic|coverage|swarm-novelty|swarm-colony|swarm|inkcheck
                [--fixture-seed N] [--search-seed N] [--story-seed N]
                [--difficulty N] [--budget N] [--time-budget-ms N] [--inkcheck-command PATH] [--json]
                [--isolated] [--max-memory-mb N] [--max-time-seconds N]
@@ -36,7 +36,7 @@ Usage:
                       [--worker-heap-mb N] [--progress ndjson|off]
   inkbench corpus list
   inkbench corpus verify
-  inkbench corpus run --story <id> --algorithm random|systematic|coverage|swarm|inkcheck
+  inkbench corpus run --story <id> --algorithm random|systematic|coverage|swarm-novelty|swarm-colony|swarm|inkcheck
                       [--search-seed N] [--story-seed N] [--budget N]
                       [--time-budget-ms N] [--inkcheck-command PATH] [--json] [--isolated]
                       [--max-memory-mb N] [--max-time-seconds N]
@@ -47,13 +47,13 @@ Usage:
                              [--worker-heap-mb N] [--progress ndjson|off]
   inkbench mutants list
   inkbench mutants verify
-  inkbench mutants run --story the-intercept-20
-                       --algorithm random|systematic|coverage|swarm|inkcheck
+  inkbench mutants run --story the-intercept-20|heresy2-30
+                       --algorithm random|systematic|coverage|swarm-novelty|swarm-colony|swarm|inkcheck
                        [--search-seed N] [--story-seed N] [--budget N]
                        [--time-budget-ms N] [--inkcheck-command PATH] [--json] [--isolated]
                        [--max-memory-mb N] [--max-time-seconds N]
                        [--worker-heap-mb N] [--progress ndjson|off] [--progress-file FILE]
-  inkbench mutants experiment [--preset smoke|development|mature|marathon-20m|marathon-60m] [--config FILE]
+  inkbench mutants experiment [--preset smoke|development|mature|marathon-20m|marathon-60m|heresy-marathon-20m|heresy-marathon-60m|heresy-ablation-20m|heresy-ablation-60m] [--config FILE]
                               [--out DIR] [--inkcheck-command PATH] [--isolated] [--resume]
                               [--max-memory-mb N] [--max-time-seconds N]
                               [--worker-heap-mb N] [--progress ndjson|off]
@@ -478,11 +478,11 @@ function mutantStoryArg(args: string[]): string {
 }
 
 function mutantPreset(name: string): MutantExperimentConfig {
-  const storyIds = listAuthoredPlantedStories().map((story) => story.id);
+  const interceptStoryIds = ["the-intercept-20"];
   if (name === "smoke") {
     return {
       schemaVersion: SCHEMA_VERSION,
-      storyIds,
+      storyIds: interceptStoryIds,
       algorithms: ["random", "systematic", "coverage", "swarm"],
       searchSeeds: [1],
       budgets: [100],
@@ -492,7 +492,7 @@ function mutantPreset(name: string): MutantExperimentConfig {
   if (name === "development") {
     return {
       schemaVersion: SCHEMA_VERSION,
-      storyIds,
+      storyIds: interceptStoryIds,
       algorithms: ["random", "systematic", "coverage", "swarm"],
       searchSeeds: [1, 2, 3, 4, 5],
       budgets: [100, 1_000, 10_000],
@@ -503,7 +503,7 @@ function mutantPreset(name: string): MutantExperimentConfig {
   if (name === "mature") {
     return {
       schemaVersion: SCHEMA_VERSION,
-      storyIds,
+      storyIds: interceptStoryIds,
       algorithms: ["random", "systematic", "coverage", "swarm", "inkcheck"],
       searchSeeds: Array.from({ length: 30 }, (_, index) => 101 + index),
       budgets: [1_000, 10_000, 100_000, 1_000_000, 10_000_000],
@@ -514,7 +514,7 @@ function mutantPreset(name: string): MutantExperimentConfig {
   if (name === "marathon-20m" || name === "marathon-60m") {
     return {
       schemaVersion: SCHEMA_VERSION,
-      storyIds,
+      storyIds: interceptStoryIds,
       algorithms: ["random", "systematic", "coverage", "swarm", "inkcheck"],
       searchSeeds: [101, 102, 103, 104, 105],
       budgets: [name === "marathon-20m" ? 20 * 60 * 1_000 : 60 * 60 * 1_000],
@@ -528,7 +528,7 @@ function mutantPreset(name: string): MutantExperimentConfig {
   if (name === "marathon-20m-inkcheck-product" || name === "marathon-60m-inkcheck-product") {
     return {
       schemaVersion: SCHEMA_VERSION,
-      storyIds,
+      storyIds: interceptStoryIds,
       algorithms: ["inkcheck"],
       searchSeeds: [101, 102, 103, 104, 105],
       budgets: [name === "marathon-20m-inkcheck-product" ? 20 * 60 * 1_000 : 60 * 60 * 1_000],
@@ -536,6 +536,33 @@ function mutantPreset(name: string): MutantExperimentConfig {
       workBudgetCeiling: 100_000_000,
       storySeed: 1,
       inkcheckOptions: {},
+      resources: { maxMemoryMb: 4_096, progressIntervalTransitions: 10_000, progressIntervalMs: 1_000 },
+    };
+  }
+  if (name === "heresy-marathon-20m" || name === "heresy-marathon-60m") {
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      storyIds: ["heresy2-30"],
+      algorithms: ["random", "systematic", "coverage", "swarm", "inkcheck"],
+      searchSeeds: [301, 302, 303],
+      budgets: [name === "heresy-marathon-20m" ? 20 * 60 * 1_000 : 60 * 60 * 1_000],
+      budgetMode: "wall-time",
+      workBudgetCeiling: 100_000_000,
+      storySeed: 1,
+      inkcheckOptions: { search: "portfolio", minRepro: false, maxDepth: 1_000, concurrency: 1 },
+      resources: { maxMemoryMb: 4_096, progressIntervalTransitions: 10_000, progressIntervalMs: 1_000 },
+    };
+  }
+  if (name === "heresy-ablation-20m" || name === "heresy-ablation-60m") {
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      storyIds: ["heresy2-30"],
+      algorithms: ["swarm-novelty", "swarm-colony", "swarm"],
+      searchSeeds: [301, 302, 303],
+      budgets: [name === "heresy-ablation-20m" ? 20 * 60 * 1_000 : 60 * 60 * 1_000],
+      budgetMode: "wall-time",
+      workBudgetCeiling: 100_000_000,
+      storySeed: 1,
       resources: { maxMemoryMb: 4_096, progressIntervalTransitions: 10_000, progressIntervalMs: 1_000 },
     };
   }

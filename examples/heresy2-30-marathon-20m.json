@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "storyIds": ["heresy2-30"],
+  "algorithms": ["random", "systematic", "coverage", "swarm", "inkcheck"],
+  "searchSeeds": [301, 302, 303],
+  "budgets": [1200000],
+  "budgetMode": "wall-time",
+  "workBudgetCeiling": 100000000,
+  "storySeed": 1,
+  "inkcheckOptions": {
+    "search": "portfolio",
+    "minRepro": false,
+    "maxDepth": 1000,
+    "concurrency": 1
+  },
+  "resources": {
+    "maxMemoryMb": 4096,
+    "progressIntervalTransitions": 10000,
+    "progressIntervalMs": 1000
+  }
+}

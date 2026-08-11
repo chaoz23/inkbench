@@ -4,7 +4,7 @@ InkBench is a neutral, reproducible benchmarking harness for measuring how effec
 
 It does not exist to make InkSwarm win. It exists to discover whether InkSwarm—or any future searcher—improves bug yield per fixed compute budget or reliably finds classes of failures that simpler strategies miss.
 
-Version 0.1.0 is a working research vertical slice: it generates Ink fixtures, runs a pinned and licensed three-project authored corpus, includes a reproducible 20-bug derivative of The Intercept, enforces transition budgets, runs four internal strategies, invokes the real InkCheck CLI when configured, records exact repro paths, and emits raw datasets plus competence, survival, coverage, and complementarity summaries.
+Version 0.1.0 is a working research vertical slice: it generates Ink fixtures, runs a pinned and licensed three-project authored corpus, includes reproducible 20-bug Intercept and 30-bug Heresy II derivatives, enforces transition budgets, runs three baseline strategies plus three explicit InkSwarm ablations, invokes the real InkCheck CLI when configured, records exact repro paths, and emits raw datasets plus competence, survival, coverage, and complementarity summaries.
 
 The current unreleased work adds the resource-bounded execution layer needed for mature InkSwarm experiments: explicit checkpoint ownership, heap/time guards, isolated workers, streamed progress, atomic partial evidence, and resumable experiment matrices.
 
@@ -13,10 +13,10 @@ The current unreleased work adds the resource-bounded execution layer needed for
 - Deterministic procedural generators for all eleven initial bug families.
 - Separate fixture, search, and Ink-runtime seeds.
 - One shared instrumented runtime and opaque checkpoint API for internal strategies.
-- Random, deterministic systematic, simple coverage-guided, and minimal InkSwarm explorers.
+- Random, deterministic systematic, simple coverage-guided, and three minimal InkSwarm ablation explorers.
 - An optional adapter for the actual [InkCheck](https://github.com/chaoz23/inkcheck) CLI—not a favorable reimplementation.
 - A separate authored-project tier containing Dog Ink Adventure, The Intercept, and Heresy II with pinned upstream commits, licenses, source/artifact hashes, and official `inklecate` 1.2.1 compiled artifacts.
-- A separate authored-planted tier containing 20 disclosed, replay-verified mutations across 16 locations and 19 fault types in The Intercept.
+- A separate authored-planted tier containing 20 disclosed, replay-verified mutations across 16 locations and 19 fault types in The Intercept, plus 30 mutations across 30 locations and 14 fault types in the substantially larger Heresy II.
 - Transition, launch, wall-time, CPU-time, empirical coverage, first-discovery, and replay evidence.
 - NDJSON, CSV, JSON, Markdown, generated `.ink`, and manifest outputs.
 - Detection-probability cells, right-censored survival points, family competence maps, and paired exclusive/union discoveries.
@@ -91,7 +91,7 @@ The authored corpus is inherited from InkCheck's promotion corpus and includes:
 
 See [the corpus provenance record](corpus/authored-v1/README.md), machine-readable [manifest](corpus/authored-v1/manifest.json), and [third-party notices](THIRD_PARTY_NOTICES.md). Every load verifies source, license, and compiled-artifact digests. Authored projects use official `inklecate` 1.2.1 `-c` output in the same `inkjs` runtime used by the internal searchers; this cleanly separates compiler compatibility from search behavior.
 
-The authored-planted corpus keeps the clean Intercept unchanged and derives `the-intercept-20` deterministically. Its five-file source bundle distributes the mutated narrative code and private oracle declarations across four story-phase files: opening, interrogation, escape/revisit, and endgame. The manifest records trigger, effect, fault type, bug family, upstream line, difficulty coordinates, hashes, and one exact replay witness for every mutation. See [its corpus record](corpus/authored-planted-v1/README.md) and [manifest](corpus/authored-planted-v1/manifest.json).
+The authored-planted corpus keeps both clean stories unchanged. It derives `the-intercept-20` deterministically across four story phases and `heresy2-30` across the debrief, base, workshop, garden, and temple portions of Heresy II's 21-file source bundle. The manifest records trigger, effect, fault type, bug family, upstream line, difficulty coordinates, hashes, and one exact root-replay witness for every mutation. See [the corpus record](corpus/authored-planted-v1/README.md) and [manifest](corpus/authored-planted-v1/manifest.json).
 
 ## Strategy contract
 
@@ -153,9 +153,12 @@ inkbench corpus experiment --preset marathon-20m --inkcheck-command /absolute/pa
 
 # Multi-bug sanity/stress case: Intercept-20, 25 serial cells, but it may saturate early.
 inkbench mutants experiment --preset marathon-20m --inkcheck-command /absolute/path/to/inkcheck/dist/cli.js --out artifacts/intercept-20-marathon-20m --resume
+
+# Large planted-bug case: Heresy II-30, 15 serial cells.
+inkbench mutants experiment --preset heresy-marathon-20m --inkcheck-command /absolute/path/to/inkcheck/dist/cli.js --out artifacts/heresy2-30-marathon-20m --resume
 ```
 
-Replace `20m` with `60m` without changing seeds or policy. On the current 8 GiB development machine the presets run cells sequentially with a 4,096 MiB heap watermark; do not run multiple marathon matrices concurrently. Intercept-20 is not by itself a marathon-quality discriminator when all strategies saturate. See [the marathon protocol](docs/marathon-protocol.md).
+Replace `20m` with `60m` without changing seeds or policy. On the current 8 GiB development machine the presets run cells sequentially with a 4,096 MiB heap watermark; do not run multiple marathon matrices concurrently. Intercept-20 is not by itself a marathon-quality discriminator when all strategies saturate. See [the marathon protocol](docs/marathon-protocol.md) and the explicitly non-comparative [Heresy II-30 fixture calibration](docs/heresy2-30-calibration.md).
 
 ## Algorithms
 
@@ -164,7 +167,9 @@ Replace `20m` with `60m` without changing seeds or policy. On the current 8 GiB 
 | `random` | Seeded uniform choices in root-started episodes; calibration baseline |
 | `systematic` | Deterministic DFS with semantic-state deduplication; not called InkCheck |
 | `coverage` | Small semantic coverage/yield priority frontier; the critical simple control |
-| `swarm` | Minimal novelty, behavioral saturation, saved colonies, pruning, short local walks, and 15% rogues |
+| `swarm-novelty` | Novelty/saturation-biased root replays only; no saved colonies or rogues |
+| `swarm-colony` | Adds bounded saved colonies, yield selection, and retirement; no rogues |
+| `swarm` | Adds a fixed 15% rogue population to the colony policy |
 | `inkcheck` | Optional subprocess adapter to the real InkCheck CLI |
 
 To use InkCheck:
@@ -179,7 +184,7 @@ inkbench run \
 
 InkCheck 0.7.2 defaults to **10,000,000 states** (with a 100,000,000 ceiling) and workload-aware automatic concurrency; small exhaustive stories still exit early. That is an important calibration point: InkBench's 100/500-transition cells are cold-start checks, not evidence about mature search behavior. The adapter always passes the matrix's explicit `--max-states`, story seed, memory, and time limits, so it never relies silently on InkCheck's defaults. The main marathon arm fixes `--concurrency 1`, portfolio search, no repro minimization, and depth 1,000 explicitly. Reports record requested and effective parallelism. Separate `marathon-20m-inkcheck-product` and `marathon-60m-inkcheck-product` corpus/mutant presets retain InkCheck's automatic concurrency and other product defaults for sensitivity analysis; do not pool those cells with the one-core arm.
 
-InkCheck's native “states explored” unit is close to, but not identical with, InkBench's choice-transition unit. Reports preserve that distinction and leave unavailable edge/state metrics as `null`. Do not erase the unit label in comparisons. InkCheck exposes its own internal progress stream and detailed memory telemetry; the adapter streams its potentially large final JSON to disk, incrementally extracts ending paths, and replays their ordered-prefix delta rather than buffering or replaying every full path. It does not yet translate InkCheck's live progress or every telemetry field into InkBench events. Portfolio `firstDiscoveredAtState` values are pass-local, so InkBench marks InkCheck discovery timing `final-only` and excludes it from survival curves until InkCheck exposes portfolio-global timestamps.
+InkCheck's native “states explored” unit is close to, but not identical with, InkBench's choice-transition unit. Reports preserve that distinction and leave unavailable edge/state metrics as `null`. Do not erase the unit label in comparisons. InkCheck exposes its own internal progress stream and detailed memory telemetry; the adapter streams its potentially large final JSON to disk, incrementally extracts ending paths, replays their ordered-prefix delta, and records InkCheck's aggregate tracked-heap peak under `adapterResources`. That block is deliberately separate from InkBench's process/snapshot accounting because the measurement boundaries differ. The adapter does not yet translate InkCheck's live progress into InkBench events. Portfolio `firstDiscoveredAtState` values are pass-local, so InkBench marks InkCheck discovery timing `final-only` and excludes it from survival curves until InkCheck exposes portfolio-global timestamps. The remaining adapter gaps are specified in [the InkCheck measurement note](docs/inkcheck-adapter-gaps.md).
 
 ## Experiment outputs
 
@@ -199,7 +204,7 @@ artifacts/quick/
 
 `runs.ndjson` is the authoritative cell-level dataset. `summary.json` includes probability and Kaplan–Meier-style survival points. `summary.md` renders family competence and complementarity tables. Timings naturally vary; choices, discoveries, budgets, coverage counts, and witnesses are deterministic for pinned versions and seeds.
 
-Run reports use schema v2 and include a `resources` section. Versioned progress events and resumable matrix-state schemas live beside the other contracts in [`schemas/`](schemas).
+Run reports use schema v3 and include harness-owned `resources` plus separately labeled external `adapterResources` when available. Versioned progress events and resumable matrix-state schemas live beside the other contracts in [`schemas/`](schemas).
 
 The versioned JSON schemas live in [`schemas/`](schemas), and the contribution path for another strategy or external tool is documented in [adding a searcher](docs/adding-a-searcher.md).
 
@@ -228,7 +233,7 @@ inkbench mutants run --story the-intercept-20 --algorithm swarm --budget 10000
 inkbench mutants experiment --config examples/intercept-20-development.json --out artifacts/intercept-20
 ```
 
-Its summary reports mean/median/max distinct bugs per run, the discovered fraction of 20, probability of any/all discoveries, per-bug probabilities and discovery times, and paired exclusive `(search seed, bug)` discoveries. Fixed-budget cells count only completed runs; resource-stopped evidence remains in raw and resource outputs.
+Its summary reports mean/median/max distinct bugs per run, the discovered fraction of the story's planted set, probability of any/all discoveries, per-bug probabilities and discovery times, and paired exclusive `(search seed, bug)` discoveries. Fixed-budget cells count only completed runs; resource-stopped evidence remains in raw and resource outputs.
 
 ## Reading results honestly
 
@@ -241,9 +246,9 @@ Its summary reports mean/median/max distinct bugs per run, the discovered fracti
 - Freeze held-out fixture seeds before tuning an algorithm.
 - Keep failed/unavailable cells in the raw dataset.
 - Never convert authored-project coverage into planted-bug yield or survival data.
-- Never describe the authored-planted mutations as defects in the clean upstream Intercept.
+- Never describe authored-planted mutations as defects in the clean upstream Intercept or Heresy II.
 
-The v0.1 generated-fixture oracle is an explicit global set only when the planted defect is reached. The authored-planted derivative broadens this to 19 fault types and carries checksum-pinned witnesses for all 20 oracles. The next measurement-validity milestone adds official replay of generated-fixture witnesses, exhaustive denominators for small fixtures, root-replay budget regimes, and stronger statistical intervals. See [methodology](docs/methodology.md) and [milestones](docs/milestones.md).
+The v0.1 generated-fixture oracle is an explicit global set only when the planted defect is reached. The authored-planted tier broadens this to two multi-file derivatives and carries checksum-pinned witnesses for all 50 oracles. The next measurement-validity milestone adds official replay of generated-fixture witnesses, exhaustive denominators for small fixtures, root-replay budget regimes, and stronger statistical intervals. See [methodology](docs/methodology.md) and [milestones](docs/milestones.md).
 
 The checked [v0.1 development matrix](docs/v0.1-development-results.md) is deliberately candid: the current minimal swarm produced no exclusive discovery in 792 small development cells and was weaker than the simple controls in several families. It is a forcing function for the next experiments, not a promotional benchmark result.
 

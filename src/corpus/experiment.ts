@@ -47,6 +47,7 @@ export interface AuthoredCoverageCell {
   meanWallMs: number;
   meanCpuMs: number | null;
   meanPeakHeapBytes: number | null;
+  meanAdapterPeakTrackedHeapBytes: number | null;
   meanPeakCheckpointBytes: number | null;
 }
 
@@ -107,6 +108,7 @@ function coverageCells(runs: RunReport[], config: AuthoredExperimentConfig): Aut
     const coverage = completed.flatMap((run) => run.coverage ? [run.coverage] : []);
     const cpu = completed.flatMap((run) => run.timing.cpuMs === null ? [] : [run.timing.cpuMs]);
     const measured = matching.filter((run) => run.resources !== null);
+    const adapterMeasured = matching.filter((run) => run.adapterResources != null);
     const findingKeys = new Set(completed.flatMap((run) => run.runtimeFindings.map((finding) => `${finding.kind}\u0000${finding.value}`)));
     cells.push({
       storyId,
@@ -125,6 +127,7 @@ function coverageCells(runs: RunReport[], config: AuthoredExperimentConfig): Aut
       meanWallMs: mean(completed.map((run) => run.timing.wallMs)),
       meanCpuMs: cpu.length > 0 ? mean(cpu) : null,
       meanPeakHeapBytes: measured.length > 0 ? mean(measured.map((run) => run.resources!.process.peak.heapUsedBytes)) : null,
+      meanAdapterPeakTrackedHeapBytes: adapterMeasured.length > 0 ? mean(adapterMeasured.map((run) => run.adapterResources!.peakTrackedHeapBytes)) : null,
       meanPeakCheckpointBytes: measured.length > 0 ? mean(measured.map((run) => run.resources!.snapshots.peakCheckpointBytes)) : null,
     });
   }
@@ -264,11 +267,11 @@ export function renderAuthoredMarkdown(summary: AuthoredExperimentSummary): stri
     "",
     "## Coverage competence map",
     "",
-    "| Story | Algorithm | Budget | Unit | Completed | Resource-stopped | Mean locations | Mean edges | Mean semantic states | Runtime-finding runs | Mean wall ms | Peak heap MiB | Peak checkpoints MiB |",
-    "| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| Story | Algorithm | Budget | Unit | Completed | Resource-stopped | Mean locations | Mean edges | Mean semantic states | Runtime-finding runs | Mean wall ms | Harness peak heap MiB | Adapter tracked heap MiB | Peak checkpoints MiB |",
+    "| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
   ];
   for (const cell of summary.coverage) {
-    lines.push(`| ${cell.storyId} | ${cell.algorithm} | ${cell.budget} | ${cell.budgetUnit} | ${cell.completed}/${cell.runs} | ${cell.resourceStopped} | ${cell.meanCoverage ? format(cell.meanCoverage.locations) : "n/a"} | ${cell.meanCoverage ? format(cell.meanCoverage.edges) : "n/a"} | ${cell.meanCoverage ? format(cell.meanCoverage.semanticStates) : "n/a"} | ${cell.runtimeFindingRuns} | ${format(cell.meanWallMs)} | ${cell.meanPeakHeapBytes === null ? "n/a" : format(cell.meanPeakHeapBytes / 2 ** 20)} | ${cell.meanPeakCheckpointBytes === null ? "n/a" : format(cell.meanPeakCheckpointBytes / 2 ** 20)} |`);
+    lines.push(`| ${cell.storyId} | ${cell.algorithm} | ${cell.budget} | ${cell.budgetUnit} | ${cell.completed}/${cell.runs} | ${cell.resourceStopped} | ${cell.meanCoverage ? format(cell.meanCoverage.locations) : "n/a"} | ${cell.meanCoverage ? format(cell.meanCoverage.edges) : "n/a"} | ${cell.meanCoverage ? format(cell.meanCoverage.semanticStates) : "n/a"} | ${cell.runtimeFindingRuns} | ${format(cell.meanWallMs)} | ${cell.meanPeakHeapBytes === null ? "n/a" : format(cell.meanPeakHeapBytes / 2 ** 20)} | ${cell.meanAdapterPeakTrackedHeapBytes === null ? "n/a" : format(cell.meanAdapterPeakTrackedHeapBytes / 2 ** 20)} | ${cell.meanPeakCheckpointBytes === null ? "n/a" : format(cell.meanPeakCheckpointBytes / 2 ** 20)} |`);
   }
   lines.push(
     "",
@@ -302,11 +305,12 @@ export function writeAuthoredExperiment(outputDirectory: string, result: Authore
   writeFileAtomic(join(outputDirectory, "corpus-manifest.json"), `${JSON.stringify(getAuthoredCorpusManifest(), null, 2)}\n`);
   if (result.cellFiles) writeNdjsonAtomicFromJsonFiles(join(outputDirectory, "runs.ndjson"), result.cellFiles);
   else writeFileAtomic(join(outputDirectory, "runs.ndjson"), `${result.runs.map((run) => JSON.stringify(run)).join("\n")}\n`);
-  const headers = ["runId", "storyId", "algorithm", "searchSeed", "storySeed", "primaryBudgetUnit", "primaryBudget", "workBudgetUnit", "workBudgetLimit", "requestedParallelism", "effectiveParallelism", "parallelismMode", "status", "stopReason", "transitions", "episodesCompleted", "runtimeFindings", "wallMs", "cpuMs", "peakHeapBytes", "peakRssBytes", "peakSnapshotBytes", "peakCheckpointBytes", "locations", "choices", "edges", "semanticStates", "rawStates"];
+  const headers = ["runId", "storyId", "algorithm", "searchSeed", "storySeed", "primaryBudgetUnit", "primaryBudget", "workBudgetUnit", "workBudgetLimit", "requestedParallelism", "effectiveParallelism", "parallelismMode", "status", "stopReason", "transitions", "episodesCompleted", "runtimeFindings", "wallMs", "cpuMs", "peakHeapBytes", "peakRssBytes", "peakSnapshotBytes", "peakCheckpointBytes", "adapterPeakTrackedHeapBytes", "adapterHeapEnvelopeBytes", "locations", "choices", "edges", "semanticStates", "rawStates"];
   const rows = result.runs.map((run) => [
     run.runId, run.fixtureId.replace(/^authored-/, ""), run.algorithm, run.searchSeed, run.storySeed, run.budget.unit, run.budget.limit, run.workBudget?.unit ?? "", run.workBudget?.limit ?? "",
     run.parallelism.requested ?? "", run.parallelism.effective ?? "", run.parallelism.mode, run.status, run.stopReason, run.counts.transitions, run.counts.episodesCompleted, run.runtimeFindings.length, run.timing.wallMs, run.timing.cpuMs ?? "",
     run.resources?.process.peak.heapUsedBytes ?? "", run.resources?.process.peak.rssBytes ?? "", run.resources?.snapshots.peakBytes ?? "", run.resources?.snapshots.peakCheckpointBytes ?? "",
+    run.adapterResources?.peakTrackedHeapBytes ?? "", run.adapterResources?.heapEnvelopeBytes ?? "",
     run.coverage?.locations ?? "", run.coverage?.choices ?? "", run.coverage?.edges ?? "", run.coverage?.semanticStates ?? "", run.coverage?.rawStates ?? "",
   ]);
   writeFileAtomic(join(outputDirectory, "runs.csv"), `${[headers, ...rows].map((row) => row.map(csv).join(",")).join("\n")}\n`);

@@ -39,7 +39,7 @@ export const BUG_FAMILIES: readonly BugFamily[] = [
   "compound-needle",
 ];
 
-export type InProcessAlgorithmId = "random" | "systematic" | "coverage" | "swarm";
+export type InProcessAlgorithmId = "random" | "systematic" | "coverage" | "swarm-novelty" | "swarm-colony" | "swarm";
 export type AlgorithmId = InProcessAlgorithmId | "inkcheck";
 
 export interface DifficultyCoordinates {
@@ -373,6 +373,19 @@ export interface RunCounts {
   episodesCompleted: number;
 }
 
+/** Resource evidence reported by an external search adapter, in its own accounting model. */
+export interface AdapterResourceUsage {
+  source: "inkcheck";
+  stateBudget: number;
+  heapEnvelopeBytes: number;
+  parentReserveBytes: number;
+  perWorkerHeapLimitBytes: number;
+  totalWorkerHeapLimitBytes: number;
+  peakTrackedHeapBytes: number;
+  aggregateMemoryStopped: boolean;
+  deadlineMs: number | null;
+}
+
 export interface RunReport {
   schemaVersion: typeof RUN_REPORT_SCHEMA_VERSION;
   runId: string;
@@ -408,7 +421,10 @@ export interface RunReport {
   };
   /** Why work ended, independent of whether a strategy exposes resource telemetry. */
   stopReason: ResourceStopReason;
+  /** Harness-owned process/snapshot accounting; external adapters cannot populate it. */
   resources: ResourceUsage | null;
+  /** Adapter-owned accounting, kept separate because its measurement boundary differs. */
+  adapterResources: AdapterResourceUsage | null;
   runtime: {
     harnessVersion: string;
     runContractVersion: string;
@@ -509,6 +525,7 @@ export interface ResourceCell {
   meanTransitions: number;
   meanWallMs: number;
   meanPeakHeapBytes: number | null;
+  meanAdapterPeakTrackedHeapBytes: number | null;
   meanPeakRssBytes: number | null;
   meanPeakSnapshotBytes: number | null;
   meanPeakCheckpointBytes: number | null;

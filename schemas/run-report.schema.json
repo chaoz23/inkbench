@@ -12,7 +12,7 @@
     "fixtureSourceSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "benchmarkTier": { "enum": ["generated-planted", "authored-planted", "authored-project"] },
     "family": { "type": "string" },
-    "algorithm": { "enum": ["random", "systematic", "coverage", "swarm", "inkcheck"] },
+    "algorithm": { "enum": ["random", "systematic", "coverage", "swarm-novelty", "swarm-colony", "swarm", "inkcheck"] },
     "algorithmVersion": { "type": "string" },
     "fixtureSeed": { "type": "integer" },
     "searchSeed": { "type": "integer" },
@@ -87,6 +87,21 @@
         "snapshots": { "type": "object", "required": ["created", "released", "current", "peak", "explicitReferences", "currentBytes", "peakBytes", "checkpointBytes", "peakCheckpointBytes"] },
         "coverageIndexBytes": { "type": "integer", "minimum": 0 },
         "peakCoverageIndexBytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "adapterResources": {
+      "type": ["object", "null"],
+      "required": ["source", "stateBudget", "heapEnvelopeBytes", "parentReserveBytes", "perWorkerHeapLimitBytes", "totalWorkerHeapLimitBytes", "peakTrackedHeapBytes", "aggregateMemoryStopped", "deadlineMs"],
+      "properties": {
+        "source": { "const": "inkcheck" },
+        "stateBudget": { "type": "integer", "minimum": 0 },
+        "heapEnvelopeBytes": { "type": "integer", "minimum": 0 },
+        "parentReserveBytes": { "type": "integer", "minimum": 0 },
+        "perWorkerHeapLimitBytes": { "type": "integer", "minimum": 0 },
+        "totalWorkerHeapLimitBytes": { "type": "integer", "minimum": 0 },
+        "peakTrackedHeapBytes": { "type": "integer", "minimum": 0 },
+        "aggregateMemoryStopped": { "type": "boolean" },
+        "deadlineMs": { "type": ["number", "null"] }
       }
     },
     "runtime": {

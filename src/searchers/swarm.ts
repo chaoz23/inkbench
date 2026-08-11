@@ -12,10 +12,12 @@ interface Colony {
   lastProductiveTransition: number;
   choiceAttempts: number[];
   behavioralKey: string;
+  zeroYieldLaunches: number;
 }
 
 const ROGUE_FRACTION = 0.15;
 const MAX_COLONIES = 256;
+const RETIRE_AFTER_ZERO_YIELD_LAUNCHES = 8;
 
 function behaviorKey(observation: Observation): string {
   return hash({
@@ -30,10 +32,11 @@ function changedVariableNames(before: Observation, after: Observation): string[]
   return [...names].filter((name) => stableJson(before.variables[name]) !== stableJson(after.variables[name]));
 }
 
-export const swarmSearcher: Searcher = {
-  id: "swarm",
-  version: "minimal-colony-v1",
-  run(controller, seed) {
+function colonySearcher(id: "swarm-colony" | "swarm", rogueFraction: number): Searcher {
+  return {
+    id,
+    version: id === "swarm" ? "minimal-colony-rogue-v2" : "swarm-ablation-colony-v1",
+    run(controller, seed) {
     const rng = new Prng(seed);
     const root = controller.launch();
     const colonies = new Map<string, Colony>();
@@ -41,8 +44,10 @@ export const swarmSearcher: Searcher = {
     const variableChangeCounts = new Map<string, number>();
     let deepest = root.depth;
     let pruned = 0;
+    let retired = 0;
     let rogueLaunches = 0;
     let nextPruneAt = 64;
+    let frontierExhausted = false;
 
     const addColony = (observation: Observation, novelty: number, transition: number): Colony | null => {
       if (observation.terminal || observation.choices.length === 0) return null;
@@ -68,6 +73,7 @@ export const swarmSearcher: Searcher = {
         lastProductiveTransition: novelty > 0 ? transition : 0,
         choiceAttempts: observation.choices.map(() => 0),
         behavioralKey: behaviorKey(observation),
+        zeroYieldLaunches: 0,
       };
       controller.retain(observation.snapshotId);
       colonies.set(observation.semanticKey, colony);
@@ -150,12 +156,30 @@ export const swarmSearcher: Searcher = {
       }
     };
 
+    const retire = (colony: Colony, priorYield: number, rootColony: Colony): void => {
+      if (colony === rootColony || !colonies.has(colony.observation.semanticKey)) return;
+      colony.zeroYieldLaunches = colony.yield > priorYield ? 0 : colony.zeroYieldLaunches + 1;
+      if (colony.zeroYieldLaunches < RETIRE_AFTER_ZERO_YIELD_LAUNCHES || colony.choiceAttempts.some((attempts) => attempts === 0)) return;
+      controller.release(colony.snapshotId);
+      colonies.delete(colony.observation.semanticKey);
+      retired += 1;
+    };
+
+    const knownFrontierIsClosed = (): boolean => pruned === 0
+      && [...colonies.values()].every((colony) => colony.choiceAttempts.every((attempts) => attempts > 0));
+
     const rootColony = addColony(root, 1, 0)!;
     behaviorVisits.set(rootColony.behavioralKey, 1);
     while (!controller.exhausted) {
-      const rogue = rng.next() < ROGUE_FRACTION;
+      if (knownFrontierIsClosed()) {
+        frontierExhausted = true;
+        break;
+      }
+      const rogue = rng.next() < rogueFraction;
       let colony = rogue ? rootColony : selectColony();
       if (!colony) colony = rootColony;
+      const launchColony = colony;
+      const priorYield = launchColony.yield;
       if (rogue) rogueLaunches += 1;
       let observation = controller.launch(rogue ? controller.rootSnapshotId : colony.snapshotId);
       colony.launches += 1;
@@ -172,12 +196,18 @@ export const swarmSearcher: Searcher = {
         prune();
         nextPruneAt = controller.transitions + 64;
       }
+      retire(launchColony, priorYield, rootColony);
     }
     return {
       notes: [
-        `Minimal InkSwarm: semantic novelty, behavioral saturation, saved colonies, pruning cap ${MAX_COLONIES}, and ${(ROGUE_FRACTION * 100).toFixed(0)}% rogue launches.`,
-        `Created ${colonies.size + pruned} colonies, pruned ${pruned}, and launched ${rogueLaunches} rogue walks.`,
+        `InkSwarm colony policy: semantic novelty, behavioral saturation, saved colonies, ${RETIRE_AFTER_ZERO_YIELD_LAUNCHES}-launch zero-yield retirement, pruning cap ${MAX_COLONIES}, and ${(rogueFraction * 100).toFixed(0)}% rogue launches.`,
+        `Retained ${colonies.size} colonies, retired ${retired}, pruned ${pruned}, and launched ${rogueLaunches} rogue walks.`,
+        frontierExhausted ? "Stopped because every choice from every retained-or-fully-retired semantic colony had been tried and no incomplete colony had been pruned." : "Did not establish semantic-frontier closure before the resource boundary.",
       ],
     };
-  },
-};
+    },
+  };
+}
+
+export const swarmColonySearcher = colonySearcher("swarm-colony", 0);
+export const swarmSearcher = colonySearcher("swarm", ROGUE_FRACTION);

@@ -11,13 +11,13 @@
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": { "enum": ["the-intercept-20"] }
+      "items": { "enum": ["the-intercept-20", "heresy2-30"] }
     },
     "algorithms": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": { "enum": ["random", "systematic", "coverage", "swarm", "inkcheck"] }
+      "items": { "enum": ["random", "systematic", "coverage", "swarm-novelty", "swarm-colony", "swarm", "inkcheck"] }
     },
     "searchSeeds": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 0 } },
     "budgets": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 1 } },

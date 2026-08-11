@@ -453,45 +453,48 @@ const bugRecords = mutations.map(({ apply: _apply, phase: _phase, dimensions, kn
   site: { file: `bugs/${_phase}.ink`, knot, upstreamLine },
   dimensions,
 }));
+const entry = {
+  id: "the-intercept-20",
+  family: upstreamCase.family,
+  directory: "the-intercept-20",
+  mutationSet: "intercept-diverse-20-v1",
+  difficulty: 5,
+  source: {
+    ...upstreamCase.source,
+    name: "The Intercept — InkBench 20-bug derivative",
+    entrypoint: ENTRYPOINT,
+    compileSetup: "Compile the entrypoint with its four local phase includes.",
+    licenseFile: "LICENSE-AND-PROVENANCE.md",
+    licenseSha256: sha256(provenance),
+    upstreamSourceSha256: upstreamCase.files[upstreamCase.source.entrypoint],
+    generator: "scripts/build-intercept-20.mjs",
+  },
+  compiled: {
+    file: ARTIFACT,
+    sha256: sha256(artifact),
+    compiler: "inklecate",
+    compilerVersion: "1.2.1",
+    arguments: ["-c", "-o", ARTIFACT, ENTRYPOINT],
+    provenance: "Generated locally from the deterministic derivative with official inklecate 1.2.1 count-all-visits enabled.",
+  },
+  files,
+  witnesses: { file: witnessFilename, sha256: sha256(witnessArtifact) },
+  bugs: bugRecords,
+};
+const manifestPath = join(OUTPUT_ROOT, "manifest.json");
+const existingManifest = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, "utf8")) : { cases: [] };
+const cases = [...existingManifest.cases.filter((candidate) => candidate.id !== entry.id), entry].sort((left, right) => left.id.localeCompare(right.id));
 const manifest = {
   schemaVersion: 1,
   tier: "authored-planted",
   corpusVersion: "authored-planted-v1",
   source: {
     cleanCorpusManifest: relative(REPO_ROOT, CLEAN_MANIFEST_PATH),
-    cleanStoryId: "the-intercept",
-    repository: upstreamCase.source.repository,
-    commit: upstreamCase.source.commit,
+    cleanStoryIds: [...new Set(cases.map((candidate) => candidate.id === "the-intercept-20" ? "the-intercept" : "heresy2"))].sort(),
   },
-  cases: [{
-    id: "the-intercept-20",
-    family: upstreamCase.family,
-    directory: "the-intercept-20",
-    mutationSet: "intercept-diverse-20-v1",
-    source: {
-      ...upstreamCase.source,
-      name: "The Intercept — InkBench 20-bug derivative",
-      entrypoint: ENTRYPOINT,
-      compileSetup: "Compile the entrypoint with its four local phase includes.",
-      licenseFile: "LICENSE-AND-PROVENANCE.md",
-      licenseSha256: sha256(provenance),
-      upstreamSourceSha256: upstreamCase.files[upstreamCase.source.entrypoint],
-      generator: "scripts/build-intercept-20.mjs",
-    },
-    compiled: {
-      file: ARTIFACT,
-      sha256: sha256(artifact),
-      compiler: "inklecate",
-      compilerVersion: "1.2.1",
-      arguments: ["-c", "-o", ARTIFACT, ENTRYPOINT],
-      provenance: "Generated locally from the deterministic derivative with official inklecate 1.2.1 count-all-visits enabled.",
-    },
-    files,
-    witnesses: { file: witnessFilename, sha256: sha256(witnessArtifact) },
-    bugs: bugRecords,
-  }],
+  cases,
 };
-write(join(OUTPUT_ROOT, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+write(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
 process.stdout.write(`built ${mutations.length} mutations in ${relative(REPO_ROOT, CASE_DIRECTORY)}\n`);
-process.stdout.write(`artifact sha256 ${manifest.cases[0].compiled.sha256}\n`);
+process.stdout.write(`artifact sha256 ${entry.compiled.sha256}\n`);

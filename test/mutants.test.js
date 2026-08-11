@@ -17,7 +17,7 @@ import {
 test("the Intercept derivative is isolated from the clean authored corpus", () => {
   const clean = loadAuthoredFixture("the-intercept");
   const stories = listAuthoredPlantedStories();
-  assert.deepEqual(stories.map((story) => story.id), ["the-intercept-20"]);
+  assert.deepEqual(stories.map((story) => story.id).sort(), ["heresy2-30", "the-intercept-20"]);
   const fixture = loadAuthoredPlantedFixture("the-intercept-20");
   assert.equal(clean.tier, "authored-project");
   assert.equal(clean.manifest.bugs.length, 0);
@@ -29,6 +29,24 @@ test("the Intercept derivative is isolated from the clean authored corpus", () =
   assert.equal(Object.keys(fixture.sourceBundle.files).length, 5);
   assert.equal(JSON.parse(fixture.compiledStory).inkVersion, 21);
   assert.notEqual(fixture.source, clean.source);
+  const controller = new InstrumentedController(fixture, 1, 1);
+  assert.ok(Object.keys(controller.launch().variables).every((name) => !name.startsWith("inkbench_bug_")));
+});
+
+test("the Heresy II derivative is large, isolated, diverse, and officially compiled", () => {
+  const clean = loadAuthoredFixture("heresy2");
+  const fixture = loadAuthoredPlantedFixture("heresy2-30");
+  assert.equal(clean.tier, "authored-project");
+  assert.equal(clean.manifest.bugs.length, 0);
+  assert.equal(fixture.tier, "authored-planted");
+  assert.equal(fixture.manifest.bugs.length, 30);
+  assert.equal(fixture.manifest.difficulty, 10);
+  assert.equal(new Set(fixture.manifest.bugs.map((bug) => bug.faultType)).size, 14);
+  assert.equal(new Set(fixture.manifest.bugs.map((bug) => bug.site.knot)).size, 30);
+  assert.equal(new Set(fixture.manifest.bugs.map((bug) => bug.site.file)).size, 5);
+  assert.equal(Object.keys(fixture.sourceBundle.files).length, 21);
+  assert.equal(JSON.parse(fixture.compiledStory).inkVersion, 21);
+  assert.notEqual(fixture.compiledStory, clean.compiledStory);
   const controller = new InstrumentedController(fixture, 1, 1);
   assert.ok(Object.keys(controller.launch().variables).every((name) => !name.startsWith("inkbench_bug_")));
 });
@@ -55,21 +73,23 @@ test("authored-planted matrices support isolated resumable execution", async () 
   }
 });
 
-test("every planted Intercept bug has an exact replayable witness", () => {
-  const fixture = loadAuthoredPlantedFixture("the-intercept-20");
-  const recorded = loadAuthoredPlantedWitnesses("the-intercept-20");
-  assert.deepEqual(Object.keys(recorded.witnesses).sort(), fixture.manifest.bugs.map((bug) => bug.id).sort());
-  for (const bug of fixture.manifest.bugs) {
-    const witness = recorded.witnesses[bug.id];
-    assert.ok(witness, bug.id);
-    const controller = new InstrumentedController(fixture, witness.choicePath.length + 1, 1);
-    let observation = controller.launch();
-    for (let index = 0; index < witness.choicePath.length; index += 1) {
-      const choiceIndex = witness.choicePath[index];
-      assert.equal(observation.choices[choiceIndex]?.text, witness.choiceTextPath[index], `${bug.id} choice ${index}`);
-      observation = controller.step(choiceIndex).after;
+test("every authored-planted bug has an exact replayable witness", () => {
+  for (const story of listAuthoredPlantedStories()) {
+    const fixture = loadAuthoredPlantedFixture(story.id);
+    const recorded = loadAuthoredPlantedWitnesses(story.id);
+    assert.deepEqual(Object.keys(recorded.witnesses).sort(), fixture.manifest.bugs.map((bug) => bug.id).sort());
+    for (const bug of fixture.manifest.bugs) {
+      const witness = recorded.witnesses[bug.id];
+      assert.ok(witness, bug.id);
+      const controller = new InstrumentedController(fixture, witness.choicePath.length + 1, 1);
+      let observation = controller.launch();
+      for (let index = 0; index < witness.choicePath.length; index += 1) {
+        const choiceIndex = witness.choicePath[index];
+        assert.equal(observation.choices[choiceIndex]?.text, witness.choiceTextPath[index], `${bug.id} choice ${index}`);
+        observation = controller.step(choiceIndex).after;
+      }
+      assert.ok(controller.bugDiscoveries.some((discovery) => discovery.bugId === bug.id), bug.id);
     }
-    assert.ok(controller.bugDiscoveries.some((discovery) => discovery.bugId === bug.id), bug.id);
   }
 });
 
@@ -96,7 +116,7 @@ test("authored-planted experiments score bug yield, per-bug competence, and comp
     writeMutantExperiment(output, result);
     assert.match(readFileSync(join(output, "summary.md"), "utf8"), /Per-bug competence map/);
     assert.equal(readFileSync(join(output, "runs.ndjson"), "utf8").trim().split("\n").length, 4);
-    assert.equal(JSON.parse(readFileSync(join(output, "corpus-manifest.json"), "utf8")).cases[0].bugs.length, 20);
+    assert.equal(JSON.parse(readFileSync(join(output, "corpus-manifest.json"), "utf8")).cases.find((entry) => entry.id === "the-intercept-20").bugs.length, 20);
   } finally {
     rmSync(output, { recursive: true, force: true });
   }

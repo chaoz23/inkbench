@@ -40,8 +40,9 @@ InkCheck portfolio discovery positions are currently pass-local rather than port
 1. Hard generated planted families at difficulty 10 measure controlled mechanisms and exact bug yield.
 2. Heresy II is the current large authored transfer case. It measures empirical coverage, complementarity, throughput, memory, and runtime findings but has no planted-bug probability.
 3. Intercept-20 measures multi-bug scoring and clustered territory effects. It is a sanity/stress fixture, not a sufficient marathon discriminator if it saturates early.
+4. Heresy II-30 supplies planted-bug yield over the larger authored structure: 30 replay-verified defects across 30 locations in five narrative source files, while retaining the complete 21-file story runtime.
 
-The next planted-story milestone is a large, non-saturating multi-bug story or Heresy-derived mutation corpus. Until then, do not turn Heresy coverage into bug-yield claims or treat Intercept saturation as evidence of long-run superiority.
+Heresy II-30 is the first large planted-story milestone. Eight defects are exposed controls; 22 use exact observable rolling-history preconditions calibrated with build-only seed 101. The primary and swarm-ablation presets freeze untouched seeds 301–303. Its 20-minute tier must still demonstrate non-saturation and plausible variance before hour-scale results are treated as discriminating evidence. Do not turn clean-Heresy coverage into bug-yield claims or treat Intercept saturation as evidence of long-run superiority.
 
 ## Promotion gate from 20 to 60 minutes
 

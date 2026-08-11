@@ -17,7 +17,7 @@
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": { "enum": ["random", "systematic", "coverage", "swarm", "inkcheck"] }
+      "items": { "enum": ["random", "systematic", "coverage", "swarm-novelty", "swarm-colony", "swarm", "inkcheck"] }
     },
     "fixtureSeeds": { "$ref": "#/$defs/positiveIntegers" },
     "searchSeeds": { "$ref": "#/$defs/nonnegativeIntegers" },

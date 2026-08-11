@@ -154,6 +154,7 @@ function resourceCells(runs: RunReport[]): ResourceCell[] {
   return [...groups.values()].map((values) => {
     const first = values[0]!;
     const measured = values.filter((run) => run.resources !== null);
+    const adapterMeasured = values.filter((run) => run.adapterResources != null);
     const optionalMean = (select: (run: RunReport) => number): number | null => measured.length === 0 ? null : mean(measured.map(select));
     return {
       family: first.family,
@@ -168,6 +169,7 @@ function resourceCells(runs: RunReport[]): ResourceCell[] {
       meanTransitions: mean(values.map((run) => run.counts.transitions)),
       meanWallMs: mean(values.map((run) => run.timing.wallMs)),
       meanPeakHeapBytes: optionalMean((run) => run.resources!.process.peak.heapUsedBytes),
+      meanAdapterPeakTrackedHeapBytes: adapterMeasured.length === 0 ? null : mean(adapterMeasured.map((run) => run.adapterResources!.peakTrackedHeapBytes)),
       meanPeakRssBytes: optionalMean((run) => run.resources!.process.peak.rssBytes),
       meanPeakSnapshotBytes: optionalMean((run) => run.resources!.snapshots.peakBytes),
       meanPeakCheckpointBytes: optionalMean((run) => run.resources!.snapshots.peakCheckpointBytes),
@@ -231,13 +233,14 @@ export function renderMarkdown(summary: ExperimentSummary): string {
     "",
     "Resource-stopped cells are excluded from fixed-budget discovery probabilities above but retained here as partial evidence. Peak snapshot bytes include Ink save JSON plus observations; checkpoint bytes are the subset explicitly retained by a search policy.",
     "",
-    "| Family | Algorithm | Budget | Completed | Resource-stopped | Mean transitions | Mean peak heap MiB | Mean peak checkpoints MiB |",
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| Family | Algorithm | Budget | Completed | Resource-stopped | Mean transitions | Harness peak heap MiB | Adapter tracked heap MiB | Mean peak checkpoints MiB |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
   );
   for (const cell of summary.resources) {
     const heap = cell.meanPeakHeapBytes === null ? "n/a" : (cell.meanPeakHeapBytes / 2 ** 20).toFixed(1);
+    const adapterHeap = cell.meanAdapterPeakTrackedHeapBytes === null ? "n/a" : (cell.meanAdapterPeakTrackedHeapBytes / 2 ** 20).toFixed(1);
     const checkpoints = cell.meanPeakCheckpointBytes === null ? "n/a" : (cell.meanPeakCheckpointBytes / 2 ** 20).toFixed(1);
-    lines.push(`| ${cell.family} | ${cell.algorithm} | ${cell.budget} | ${cell.completed}/${cell.runs} | ${cell.resourceStopped} | ${cell.meanTransitions.toFixed(1)} | ${heap} | ${checkpoints} |`);
+    lines.push(`| ${cell.family} | ${cell.algorithm} | ${cell.budget} | ${cell.completed}/${cell.runs} | ${cell.resourceStopped} | ${cell.meanTransitions.toFixed(1)} | ${heap} | ${adapterHeap} | ${checkpoints} |`);
   }
   lines.push(
     "",

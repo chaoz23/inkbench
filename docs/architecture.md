@@ -15,7 +15,7 @@ fixture seed -> generated Ink + manifest -> compiler -> instrumented controller
                                                         |
                identical Observation + opaque snapshots + transition budget
                                                         |
-                   random / systematic / coverage / swarm
+             random / systematic / coverage / swarm ablations
                                                         |
                      oracle + coverage + replay evidence
 
@@ -23,7 +23,8 @@ pinned authored sources + licenses -> verified inklecate artifact -> same contro
                                                                     |
                                                 coverage + runtime-finding evidence
 
-pinned clean Intercept -> deterministic 20-mutation transform -> verified artifact
+pinned clean Intercept/Heresy II -> deterministic 20/30-mutation transforms
+                                                        -> verified artifacts
                                                                    |
                                   same controller -> per-bug oracle + replay evidence
 ```
@@ -110,7 +111,9 @@ Multi-bug scoring counts distinct oracles per run and publishes per-bug discover
 - **Random**: seeded uniform legal choices from root-started episodes.
 - **Systematic**: deterministic depth-first expansion over saved states; a calibration baseline, not branded as InkCheck.
 - **Coverage**: a small priority-frontier explorer using semantic coverage and saturation.
-- **InkSwarm**: a deliberately small rule set—save behaviorally novel states, prefer productive/unsaturated colonies, take short locally biased walks, and reserve a fixed rogue fraction. A hard colony cap prunes low-scoring checkpoints for bounded memory. Planted-oracle discoveries never enter its novelty score.
+- **InkSwarm novelty ablation**: root-replayed short walks with inverse-visit choice saturation; no checkpoint colonies or rogues.
+- **InkSwarm colony ablation**: adds saved semantic colonies, yield-weighted allocation, zero-yield retirement, a hard checkpoint cap, and semantic-frontier closure; no rogues.
+- **InkSwarm full minimal policy**: adds a fixed 15% rogue population to the colony policy. Planted-oracle discoveries never enter any swarm novelty score.
 - **InkCheck adapter**: invokes the actual `inkcheck` CLI and scores its terminal-state evidence. It is intentionally an external adapter so InkBench does not silently reimplement or freeze InkCheck behavior.
 
 ## Known v0.1 limits
@@ -119,6 +122,6 @@ Multi-bug scoring counts distinct oracles per run and publishes per-bug discover
 - In-process strategies use free checkpoint restore in the transition budget. Wall/CPU measurements expose the cost, but a second `root_replay` budget regime is needed for hosts that cannot restore cheaply.
 - State/edge counts are empirical discoveries, not proof-relative percentages unless a fixture is exhaustively enumerated.
 - The InkCheck adapter cannot recover every internal edge metric and currently reports those fields as unavailable.
-- The synchronous InkCheck adapter forwards state, memory, and time limits and reads graceful memory/time stops, but does not yet translate InkCheck's live NDJSON stream or all of its internal memory telemetry.
+- The synchronous InkCheck adapter forwards state, memory, and time limits, reads graceful memory/time stops, and records InkCheck's aggregate tracked-heap evidence in a separately labeled adapter block. It does not yet translate InkCheck's live progress stream, expose child CPU, or recover portfolio-global per-finding timestamps.
 - No aggregate leaderboard is authoritative in v0.1. Family curves and paired complementarity are the primary outputs.
 - The first authored corpus has only three consent-safe public projects. It tests transfer, not representativeness of all Ink projects.

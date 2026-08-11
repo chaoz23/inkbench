@@ -8,7 +8,7 @@ import { fixtureSourceHash } from "../core/hash.js";
 import { benchmarkRunId } from "../core/identity.js";
 import { parseInkJson } from "../core/ink-json.js";
 import { compiledFixtureStory } from "../core/runtime.js";
-import { INKBENCH_VERSION, RUN_CONTRACT_VERSION, RUN_REPORT_SCHEMA_VERSION, type BugDiscovery, type ResourceStopReason, type RunReport, type RunRequest } from "../core/types.js";
+import { INKBENCH_VERSION, RUN_CONTRACT_VERSION, RUN_REPORT_SCHEMA_VERSION, type AdapterResourceUsage, type BugDiscovery, type ResourceStopReason, type RunReport, type RunRequest } from "../core/types.js";
 
 interface InkCheckEnding {
   choiceIndices?: number[];
@@ -26,12 +26,55 @@ interface InkCheckReport {
     endingsFound?: InkCheckEnding[];
     limits?: { maxStates?: number };
     exhaustive?: boolean;
-    execution?: { mode?: string; effectiveConcurrency?: number; requestedConcurrency?: number };
+    execution?: {
+      mode?: string;
+      effectiveConcurrency?: number;
+      requestedConcurrency?: number;
+      resources?: {
+        stateBudget?: number;
+        heapEnvelopeBytes?: number;
+        parentReserveBytes?: number;
+        perWorkerHeapLimitBytes?: number;
+        totalWorkerHeapLimitBytes?: number;
+        peakTrackedHeapBytes?: number;
+        aggregateMemoryStopped?: boolean;
+        deadlineMs?: number;
+      };
+    };
     truncatedBy?: {
       maxStates?: boolean;
       memory?: boolean;
       time?: boolean;
     };
+  };
+}
+
+function adapterResources(report: InkCheckReport): AdapterResourceUsage | null {
+  const resources = report.explore?.execution?.resources;
+  if (!resources) return null;
+  const numeric = [
+    resources.stateBudget,
+    resources.heapEnvelopeBytes,
+    resources.parentReserveBytes,
+    resources.perWorkerHeapLimitBytes,
+    resources.totalWorkerHeapLimitBytes,
+    resources.peakTrackedHeapBytes,
+  ];
+  if (numeric.some((value) => typeof value !== "number" || !Number.isFinite(value) || value < 0)
+    || typeof resources.aggregateMemoryStopped !== "boolean"
+    || (resources.deadlineMs !== undefined && (typeof resources.deadlineMs !== "number" || !Number.isFinite(resources.deadlineMs)))) {
+    return null;
+  }
+  return {
+    source: "inkcheck",
+    stateBudget: resources.stateBudget!,
+    heapEnvelopeBytes: resources.heapEnvelopeBytes!,
+    parentReserveBytes: resources.parentReserveBytes!,
+    perWorkerHeapLimitBytes: resources.perWorkerHeapLimitBytes!,
+    totalWorkerHeapLimitBytes: resources.totalWorkerHeapLimitBytes!,
+    peakTrackedHeapBytes: resources.peakTrackedHeapBytes!,
+    aggregateMemoryStopped: resources.aggregateMemoryStopped,
+    deadlineMs: resources.deadlineMs ?? null,
   };
 }
 
@@ -234,6 +277,7 @@ function unavailable(request: RunRequest, runId: string, wallMs: number, message
     parallelism: { requested: request.inkcheckOptions === undefined ? 1 : request.inkcheckOptions.concurrency ?? "auto", effective: null, mode: "unavailable" },
     stopReason: "error",
     resources: null,
+    adapterResources: null,
     runtime: { harnessVersion: INKBENCH_VERSION, runContractVersion: RUN_CONTRACT_VERSION, engine: "inkcheck", engineVersion: "unavailable", node: process.version, platform: `${process.platform}-${process.arch}` },
     status: "adapter-unavailable",
     error: message,
@@ -342,6 +386,7 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
       elapsedMs: wallMs,
       cpuMs: null,
     }));
+    const externalResources = adapterResources(parsed);
     return {
       schemaVersion: RUN_REPORT_SCHEMA_VERSION,
       runId,
@@ -379,6 +424,7 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
       },
       stopReason: compileFailed || processFailed ? "error" : stopReason,
       resources: null,
+      adapterResources: externalResources,
       runtime: {
         harnessVersion: INKBENCH_VERSION,
         runContractVersion: RUN_CONTRACT_VERSION,
@@ -401,6 +447,9 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
         ...(request.resources?.maxTimeMs === undefined ? [] : [`Forwarded a ${Math.max(1, Math.ceil(request.resources.maxTimeMs / 1_000))} second emergency time guard to InkCheck.`]),
         "InkCheck states and InkBench choice transitions are adjacent but not identical work units; compare wall time and detection, and keep unit labels visible.",
         "InkCheck portfolio finding positions are pass-local, so discovery timing is final-only and must not enter survival curves.",
+        ...(externalResources === null
+          ? ["InkCheck did not expose adapter-owned resource telemetry for this execution mode."]
+          : ["Recorded InkCheck's aggregate tracked-heap telemetry separately from InkBench process/snapshot accounting."]),
         "InkCheck does not expose the full InkBench empirical edge/state metric set, so coverage is null.",
       ],
     };

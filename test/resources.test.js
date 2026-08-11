@@ -163,7 +163,21 @@ process.stdout.write(JSON.stringify({
     statesExplored: 77,
     endingsFound: [{ choiceIndices: [2], path: ["Obvious option 3"], firstDiscoveredAtState: 5 }],
     exhaustive: false,
-    truncatedBy: { maxStates: false, memory: true, time: false }
+    truncatedBy: { maxStates: false, memory: true, time: false },
+    execution: {
+      mode: "concurrent",
+      effectiveConcurrency: 1,
+      resources: {
+        stateBudget: 123,
+        heapEnvelopeBytes: 100663296,
+        parentReserveBytes: 16777216,
+        perWorkerHeapLimitBytes: 83886080,
+        totalWorkerHeapLimitBytes: 83886080,
+        peakTrackedHeapBytes: 50331648,
+        aggregateMemoryStopped: true,
+        deadlineMs: 2000
+      }
+    }
   }
 }, null, 2));
 `, "utf8");
@@ -184,6 +198,17 @@ process.stdout.write(JSON.stringify({
     assert.equal(report.parallelism.requested, 1);
     assert.match(report.notes.join("\n"), /Stream-parsed 1 ending paths/);
     assert.equal(report.resources, null);
+    assert.deepEqual(report.adapterResources, {
+      source: "inkcheck",
+      stateBudget: 123,
+      heapEnvelopeBytes: 100663296,
+      parentReserveBytes: 16777216,
+      perWorkerHeapLimitBytes: 83886080,
+      totalWorkerHeapLimitBytes: 83886080,
+      peakTrackedHeapBytes: 50331648,
+      aggregateMemoryStopped: true,
+      deadlineMs: 2000,
+    });
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
