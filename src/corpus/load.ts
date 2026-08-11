@@ -68,7 +68,7 @@ function verifyManifest(): void {
 
 verifyManifest();
 
-function extractLocations(files: Record<string, string>): string[] {
+export function extractLocations(files: Record<string, string>): string[] {
   const locations = new Set<string>();
   for (const source of Object.values(files)) {
     let currentKnot: string | null = null;

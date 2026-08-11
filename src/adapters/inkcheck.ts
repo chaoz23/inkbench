@@ -76,10 +76,10 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
   const started = performance.now();
   const scratch = mkdtempSync(join(tmpdir(), "inkbench-inkcheck-"));
   try {
-    const entrypoint = request.fixture.tier === "authored-project"
+    const entrypoint = request.fixture.tier !== "generated-planted"
       ? request.fixture.sourceBundle.entrypoint
       : `${request.fixture.manifest.fixtureId}.ink`;
-    if (request.fixture.tier === "authored-project") {
+    if (request.fixture.tier !== "generated-planted") {
       for (const [relativePath, contents] of Object.entries(request.fixture.sourceBundle.files)) {
         const target = scratchPath(scratch, relativePath);
         mkdirSync(dirname(target), { recursive: true });

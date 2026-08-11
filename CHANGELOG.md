@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add a deterministic, separately licensed 20-bug derivative of The Intercept spanning four source files, 16 story locations, and 19 fault types, with official compiler provenance and exact witnesses for every oracle.
+- Add an `authored-planted` benchmark tier, `inkbench mutants` CLI, multi-bug yield/per-bug competence/complementarity reports, and isolated resumable mature matrices.
 - Add explicit reference-counted checkpoint ownership so strategies pay for the Ink states they retain instead of the harness retaining every transition forever.
 - Add InkCheck-inspired heap/time guards, process and checkpoint memory accounting, graceful resource-stopped reports, and versioned NDJSON progress events.
 - Add isolated worker execution with configurable V8 heap ceilings and hard-timeout containment.

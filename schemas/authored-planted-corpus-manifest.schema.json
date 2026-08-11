@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chaoz23/inkbench/blob/v0.1.0/schemas/authored-planted-corpus-manifest.schema.json",
+  "title": "InkBench authored-planted corpus manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "tier", "corpusVersion", "source", "cases"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "tier": { "const": "authored-planted" },
+    "corpusVersion": { "const": "authored-planted-v1" },
+    "source": { "type": "object" },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "family", "directory", "mutationSet", "source", "compiled", "files", "witnesses", "bugs"],
+        "properties": {
+          "id": { "const": "the-intercept-20" },
+          "family": { "const": "choice-dense-authored-story" },
+          "directory": { "type": "string" },
+          "mutationSet": { "const": "intercept-diverse-20-v1" },
+          "source": { "type": "object" },
+          "compiled": { "type": "object" },
+          "files": { "type": "object", "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" } },
+          "witnesses": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["file", "sha256"],
+            "properties": {
+              "file": { "type": "string" },
+              "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            }
+          },
+          "bugs": {
+            "type": "array",
+            "minItems": 20,
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "family", "faultType", "trigger", "effect", "description", "oracle", "site", "dimensions"],
+              "properties": {
+                "id": { "type": "string", "pattern": "^intercept-[0-9]{2}-" },
+                "family": { "$ref": "#/$defs/family" },
+                "faultType": { "type": "string", "minLength": 1 },
+                "trigger": { "type": "string", "minLength": 1 },
+                "effect": { "type": "string", "minLength": 1 },
+                "description": { "type": "string", "minLength": 1 },
+                "oracle": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["kind", "variable", "value"],
+                  "properties": {
+                    "kind": { "const": "variable-equals" },
+                    "variable": { "type": "string", "pattern": "^inkbench_bug_[0-9]{2}$" },
+                    "value": { "const": true }
+                  }
+                },
+                "site": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["file", "knot", "upstreamLine"],
+                  "properties": {
+                    "file": { "type": "string" },
+                    "knot": { "type": "string" },
+                    "upstreamLine": { "type": "integer", "minimum": 1 }
+                  }
+                },
+                "dimensions": { "$ref": "#/$defs/dimensions" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "family": {
+      "enum": ["shallow-obvious", "deep-corridor", "rare-prefix", "combination-lock", "loop-count", "revisit-after-mutation", "novelty-honeypot", "false-novelty", "delayed-consequence", "order-dependent", "compound-needle"]
+    },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["depth", "width", "stateDimensionality", "rarity", "delay", "revisit", "deception", "order"],
+      "properties": {
+        "depth": { "type": "number", "minimum": 0 },
+        "width": { "type": "number", "minimum": 0 },
+        "stateDimensionality": { "type": "number", "minimum": 0 },
+        "rarity": { "type": "number", "minimum": 0 },
+        "delay": { "type": "number", "minimum": 0 },
+        "revisit": { "type": "number", "minimum": 0 },
+        "deception": { "type": "number", "minimum": 0 },
+        "order": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}

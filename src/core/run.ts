@@ -123,7 +123,7 @@ export function runBenchmark(request: RunRequest): RunReport {
       status: stopReason === "memory" || stopReason === "time" ? "resource-stopped" : "completed",
       error: null,
       notes: [
-        ...(request.fixture.tier === "authored-project"
+        ...(request.fixture.tier !== "generated-planted"
           ? [...outcome.notes, `Loaded pinned ${request.fixture.manifest.compiler.name} ${request.fixture.manifest.compiler.version} compiled artifact ${request.fixture.manifest.compiler.artifactSha256}.`]
           : outcome.notes),
         ...(progressError ? [`Progress observer failed without changing search behavior: ${progressError}`] : []),
@@ -169,7 +169,7 @@ export function runBenchmark(request: RunRequest): RunReport {
       runtime: { harnessVersion: INKBENCH_VERSION, runContractVersion: RUN_CONTRACT_VERSION, engine: "inkjs", engineVersion: "2.4.0", node: process.version, platform: `${process.platform}-${process.arch}` },
       status: compileError ? "compile-error" : "runtime-error",
       error: message,
-      notes: request.fixture.tier === "authored-project"
+      notes: request.fixture.tier !== "generated-planted"
         ? [`Authored source was pinned at upstream commit ${request.fixture.manifest.source.commit}; compiled artifact ${request.fixture.manifest.compiler.artifactSha256}.`]
         : [],
     };

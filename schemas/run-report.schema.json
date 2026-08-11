@@ -10,7 +10,7 @@
     "fixtureId": { "type": "string" },
     "fixtureGeneratorVersion": { "type": "string" },
     "fixtureSourceSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-    "benchmarkTier": { "enum": ["generated-planted", "authored-project"] },
+    "benchmarkTier": { "enum": ["generated-planted", "authored-planted", "authored-project"] },
     "family": { "type": "string" },
     "algorithm": { "enum": ["random", "systematic", "coverage", "swarm", "inkcheck"] },
     "algorithmVersion": { "type": "string" },

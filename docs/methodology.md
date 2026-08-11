@@ -36,6 +36,12 @@ Run real stories as a separate ecological-validity analysis. Match story, search
 
 Authored stories do not have planted oracles. Do not put them in discovery-probability or survival curves, infer that coverage is bug yield, or combine their scores with the generated-fixture tier. A real-story runtime finding can become a bug result only after a story-specific oracle and expected-behavior review are added explicitly.
 
+## Authored-planted tier
+
+Run the disclosed real-story derivative as a third, separate analysis. Match story/mutation-set hash, search seed, runtime seed, budget, compiler artifact, resource limits, and algorithm. Primary outcomes are distinct bugs discovered per run, discovery fraction, per-bug probability/time-to-discovery, fault-type competence, and paired exclusive `(search seed, bug ID)` discoveries.
+
+Every planted mutation must be compilable, have a concrete observable effect beyond its marker, and carry an exact replay witness. This tier may not be used to claim that the upstream authored story contains those bugs. It also should not be pooled with procedurally generated fixture families: one authored mutation set improves realism and within-story diversity but is not an independent sample of 20 stories.
+
 ## Interpretation rules
 
 - Do not pool families into a single score without also publishing the family table.
@@ -46,6 +52,7 @@ Authored stories do not have planted oracles. Do not put them in discovery-proba
 - Freeze evaluation seeds before changing strategy parameters.
 - Repeat randomized strategies; one lucky trajectory is a witness, not comparative evidence.
 - Treat one-seed authored corpus smokes as plumbing checks, not comparative claims.
+- Treat the 20 mutations as within-story bug opportunities, not 20 statistically independent projects.
 
 ## Suggested research matrix
 

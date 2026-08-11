@@ -23,7 +23,7 @@ export type AuthoredStoryFamily =
   | "stitch-heavy-random-authored-story";
 
 export type BenchmarkFamily = BugFamily | AuthoredStoryFamily;
-export type BenchmarkTier = "generated-planted" | "authored-project";
+export type BenchmarkTier = "generated-planted" | "authored-planted" | "authored-project";
 
 export const BUG_FAMILIES: readonly BugFamily[] = [
   "shallow-obvious",
@@ -64,6 +64,41 @@ export interface PlantedBug {
   family: BugFamily;
   description: string;
   oracle: VariableOracle;
+}
+
+export type AuthoredFaultType =
+  | "duplicate-choice"
+  | "inventory-alias"
+  | "missing-choice"
+  | "numeric-sign-corruption"
+  | "unrelated-side-effect"
+  | "stale-state-reset"
+  | "cross-state-contamination"
+  | "choice-effect-inversion"
+  | "history-erasure"
+  | "wrong-divert"
+  | "condition-bypass"
+  | "impossible-inventory-state"
+  | "premature-state-commit"
+  | "write-after-write-loss"
+  | "revisit-side-effect"
+  | "loop-off-by-one"
+  | "irrelevant-state-coupling"
+  | "compound-state-corruption"
+  | "delayed-missing-choice";
+
+export interface BugSourceSite {
+  file: string;
+  knot: string;
+  upstreamLine: number;
+}
+
+export interface AuthoredPlantedBug extends PlantedBug {
+  faultType: AuthoredFaultType;
+  trigger: string;
+  effect: string;
+  site: BugSourceSite;
+  dimensions: DifficultyCoordinates;
 }
 
 export interface FixtureManifest {
@@ -130,7 +165,36 @@ export interface AuthoredFixture {
   manifest: AuthoredFixtureManifest;
 }
 
-export type BenchmarkFixture = GeneratedFixture | AuthoredFixture;
+export interface AuthoredPlantedFixtureManifest {
+  schemaVersion: typeof SCHEMA_VERSION;
+  generatorVersion: "authored-planted-v1";
+  fixtureId: string;
+  family: AuthoredStoryFamily;
+  seed: 0;
+  difficulty: number;
+  dimensions: DifficultyCoordinates;
+  parameters: Record<string, number | string | boolean | number[] | string[]>;
+  locations: string[];
+  bugs: AuthoredPlantedBug[];
+  mutationSet: string;
+  source: CorpusSourceMetadata;
+  compiler: {
+    name: "inklecate";
+    version: string;
+    artifactSha256: string;
+    arguments: string[];
+  };
+}
+
+export interface AuthoredPlantedFixture {
+  tier: "authored-planted";
+  source: string;
+  sourceBundle: SourceBundle;
+  compiledStory: string;
+  manifest: AuthoredPlantedFixtureManifest;
+}
+
+export type BenchmarkFixture = GeneratedFixture | AuthoredPlantedFixture | AuthoredFixture;
 
 export interface ChoiceObservation {
   index: number;

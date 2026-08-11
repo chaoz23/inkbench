@@ -6,7 +6,7 @@
   "required": ["schemaVersion", "status", "completedCells", "totalCells", "config", "runIds"],
   "properties": {
     "schemaVersion": { "const": 1 },
-    "benchmarkTier": { "enum": ["authored-project"] },
+    "benchmarkTier": { "enum": ["authored-project", "authored-planted"] },
     "status": { "enum": ["running", "complete"] },
     "completedCells": { "type": "integer", "minimum": 0 },
     "totalCells": { "type": "integer", "minimum": 1 },

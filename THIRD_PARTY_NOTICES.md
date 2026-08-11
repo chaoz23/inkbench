@@ -6,6 +6,8 @@ InkBench's own code and generated fixtures are MIT licensed. The authored-projec
 - **The Intercept**, copyright © 2016 inkle Ltd., MIT License. Upstream: <https://github.com/inkle/the-intercept> at commit `2a816b56e61ce4bf02bec1c638074645bdd871e3`. The release statement and full license are in `corpus/authored-v1/the-intercept/LICENSE-AND-PROVENANCE.md`.
 - **Heresy II**, Randall Frank, Creative Commons Attribution 4.0 International. Upstream: <https://github.com/randall-frank/heresy2-assets> at commit `37b8a7804217bb40a9f69f6fd9c173f2017d550e`. The full license is in `corpus/authored-v1/heresy2/LICENSE`.
 
-The compiled `story.ink.json` files are derived forms of their corresponding story sources and remain subject to those works' licenses. InkBench discloses technical newline normalization and compiler provenance in `corpus/authored-v1/README.md` and `manifest.json`.
+The authored-planted `the-intercept-20` case is a deliberately modified derivative of The Intercept under the same MIT terms. Its full license, modification notice, deterministic mutation source, and compiled form are in `corpus/authored-planted-v1/` and `scripts/build-intercept-20.mjs`.
+
+The compiled `story.ink.json` files are derived forms of their corresponding story sources and remain subject to those works' licenses. InkBench discloses technical newline normalization and compiler provenance in the corresponding corpus README and manifest.
 
 Inclusion is for reproducible research and does not imply endorsement by the original authors.

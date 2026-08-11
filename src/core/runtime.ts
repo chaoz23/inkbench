@@ -149,7 +149,7 @@ function extractVariables(story: Story): Record<string, unknown> {
 }
 
 function compile(fixture: BenchmarkFixture): string {
-  if (fixture.tier === "authored-project") return fixture.compiledStory;
+  if (fixture.tier !== "generated-planted") return fixture.compiledStory;
   const errors: string[] = [];
   const warnings: string[] = [];
   const options = new CompilerOptions(null, [], true, (message: string, type: number) => {
@@ -176,6 +176,7 @@ export class InstrumentedController {
   private readonly discoveries = new Map<string, BugDiscovery>();
   private readonly findings = new Map<string, RuntimeFinding>();
   private readonly guards: ResourceGuards;
+  private readonly oracleVariables: Set<string>;
   private readonly onTransition: ((result: TransitionResult) => void) | undefined;
   private active: SnapshotRecord | null = null;
   private nextSnapshot = 0;
@@ -207,6 +208,7 @@ export class InstrumentedController {
     this.budget = budget;
     this.storySeed = storySeed;
     this.guards = options.guards ?? new ResourceGuards();
+    this.oracleVariables = new Set(fixture.manifest.bugs.map((bug) => bug.oracle.variable));
     this.onTransition = options.onTransition;
     this.storyJson = compile(fixture);
     this.story = new Story(parseInkJson(this.storyJson));
@@ -425,7 +427,8 @@ export class InstrumentedController {
     } catch (error) {
       this.operationErrors.push(error instanceof Error ? error.message : String(error));
     }
-    const variables = extractVariables(this.story);
+    const allVariables = extractVariables(this.story);
+    const variables = Object.fromEntries(Object.entries(allVariables).filter(([name]) => !this.oracleVariables.has(name)));
     const visitCounts = Object.fromEntries(this.fixture.manifest.locations.map((location) => {
       try {
         return [location, this.story.state.VisitCountAtPathString(location) ?? 0];
@@ -462,7 +465,7 @@ export class InstrumentedController {
     const terminal = isTerminalState;
     const events: Observation["events"] = [];
     for (const bug of this.fixture.manifest.bugs) {
-      if (bug.oracle.kind === "variable-equals" && variables[bug.oracle.variable] === bug.oracle.value) {
+      if (bug.oracle.kind === "variable-equals" && allVariables[bug.oracle.variable] === bug.oracle.value) {
         events.push({ kind: "bug", value: bug.id });
       }
     }

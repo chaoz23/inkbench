@@ -14,7 +14,7 @@ export function hash(value: unknown, length = 16): string {
 
 export function fixtureSourceHash(fixture: BenchmarkFixture): string {
   return hash(
-    fixture.tier === "authored-project"
+    fixture.tier !== "generated-planted"
       ? { entrypoint: fixture.sourceBundle.entrypoint, files: fixture.sourceBundle.files, compiledStory: fixture.compiledStory }
       : fixture.source,
     64,

@@ -15,3 +15,9 @@ export { runAuthoredExperiment, summarizeAuthoredRuns, writeAuthoredExperiment, 
 export type * from "./corpus/experiment.js";
 export { runAuthoredExperimentIsolated } from "./corpus/isolated.js";
 export type { IsolatedAuthoredExperimentOptions } from "./corpus/isolated.js";
+export { getAuthoredPlantedCorpusManifest, listAuthoredPlantedStories, loadAuthoredPlantedFixture, loadAuthoredPlantedWitnesses } from "./mutants/load.js";
+export type { AuthoredPlantedCorpusCase, AuthoredPlantedCorpusManifest, AuthoredPlantedWitness, AuthoredPlantedWitnesses } from "./mutants/load.js";
+export { renderMutantMarkdown, runMutantExperiment, summarizeMutantRuns, writeMutantExperiment } from "./mutants/experiment.js";
+export type * from "./mutants/experiment.js";
+export { runMutantExperimentIsolated } from "./mutants/isolated.js";
+export type { IsolatedMutantExperimentOptions } from "./mutants/isolated.js";

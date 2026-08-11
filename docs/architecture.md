@@ -22,6 +22,10 @@ fixture seed -> generated Ink + manifest -> compiler -> instrumented controller
 pinned authored sources + licenses -> verified inklecate artifact -> same controller
                                                                     |
                                                 coverage + runtime-finding evidence
+
+pinned clean Intercept -> deterministic 20-mutation transform -> verified artifact
+                                                                   |
+                                  same controller -> per-bug oracle + replay evidence
 ```
 
 Every in-process strategy can:
@@ -33,7 +37,7 @@ Every in-process strategy can:
 
 Checkpoint handles have explicit ownership. A searcher calls `retain(snapshotId)` when it places a state in a frontier or colony and `release(snapshotId)` when that reference is consumed or pruned. The controller keeps only the root, active state, and explicitly retained states. Reports separate total runtime snapshot bytes from the subset retained as policy checkpoints.
 
-No strategy receives generator parameters, target choices, oracle definitions, undiscovered graph structure, or a raw Ink save document. Snapshot IDs are opaque handles. InkSwarm's colonies therefore test resource allocation over saved states; they are not a hidden capability denied to baselines.
+No strategy receives generator parameters, target choices, oracle definitions, oracle-marker globals, undiscovered graph structure, or a raw Ink save document. Oracle values are evaluated inside the controller and removed from the shared variable/semantic-coverage observation. Snapshot IDs are opaque handles. InkSwarm's colonies therefore test resource allocation over saved states; they are not a hidden capability denied to baselines.
 
 ## Budget contract
 
@@ -93,6 +97,14 @@ Authored stories are a second, non-oracle tier. Each entry records upstream repo
 
 Authored reports may compare empirical coverage, runtime findings, terminal episodes, wall/CPU cost, and item-level coverage complementarity. They must not produce planted-bug discovery probabilities or survival curves, and their empirical counts are not coverage percentages without a proven denominator.
 
+## Authored-planted corpus contract
+
+The authored-planted tier is a mutation benchmark between generated micro-fixtures and clean ecological-validity stories. The clean upstream source stays checksum-pinned and untouched. A deterministic build script creates a separate multi-file derivative, records each transformation and source site, compiles one official `inklecate` artifact, and publishes a checksum-pinned exact witness for every oracle.
+
+Each defect record adds a fault type, trigger, observable effect, source knot/upstream line, and its own difficulty coordinates to the ordinary planted-bug contract. Searchers do not receive this metadata. The same runtime/controller, observation, snapshot, budget, and resource rules apply to all in-process strategies; the InkCheck adapter receives the same mutated source bundle.
+
+Multi-bug scoring counts distinct oracles per run and publishes per-bug discovery probabilities. Complementarity is paired over `(search seed, bug ID)`, preventing a strategy that repeatedly finds one shallow defect from receiving the same credit as one that expands the discovered bug set. Clean-authored coverage, generated-fixture survival, and authored-planted bug yield remain separate analyses.
+
 ## Strategy set
 
 - **Random**: seeded uniform legal choices from root-started episodes.
@@ -103,7 +115,7 @@ Authored reports may compare empirical coverage, runtime findings, terminal epis
 
 ## Known v0.1 limits
 
-- Generated fixtures use one explicit oracle variable per planted defect; later versions should add runtime failures, assertions, missing/impossible content, and nonproductive-loop oracles.
+- Generated fixtures use one explicit oracle variable per planted defect. The authored-planted tier now adds missing/impossible content, wrong-divert, loop, revisit, delayed, and state-corruption defects, but fatal runtime failures still need adapter-equivalent scoring before inclusion.
 - In-process strategies use free checkpoint restore in the transition budget. Wall/CPU measurements expose the cost, but a second `root_replay` budget regime is needed for hosts that cannot restore cheaply.
 - State/edge counts are empirical discoveries, not proof-relative percentages unless a fixture is exhaustively enumerated.
 - The InkCheck adapter cannot recover every internal edge metric and currently reports those fields as unavailable.
