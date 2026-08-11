@@ -1,5 +1,6 @@
 import { Compiler, CompilerOptions, Story } from "inkjs/full";
 import { hash, stableJson, variableValueTokens } from "./hash.js";
+import { parseInkJson } from "./ink-json.js";
 import type {
   BenchmarkFixture,
   BugDiscovery,
@@ -167,7 +168,7 @@ export class InstrumentedController {
     this.budget = budget;
     this.storySeed = storySeed;
     this.storyJson = compile(fixture);
-    this.story = new Story(this.storyJson);
+    this.story = new Story(parseInkJson(this.storyJson));
     this.story.onError = (message: string, type: number) => {
       if (type === 2) this.operationErrors.push(message);
       else this.operationWarnings.push(message);
@@ -209,7 +210,8 @@ export class InstrumentedController {
   launch(snapshotId = this.rootSnapshotId): Observation {
     const record = this.snapshots.get(snapshotId);
     if (!record) throw new RangeError(`unknown snapshot: ${snapshotId}`);
-    this.story.state.LoadJson(record.stateJson);
+    this.story.state.LoadJsonObj(parseInkJson(record.stateJson));
+    this.story.state.onDidLoadState?.();
     this.story.ResetErrors();
     this.active = record;
     this.launches += 1;

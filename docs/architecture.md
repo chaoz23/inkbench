@@ -6,6 +6,8 @@ InkBench is a benchmark harness, not an InkSwarm showcase. It owns fixture gener
 
 The v0.1 runtime uses `inkjs` 2.4.0 in process. It compiles deterministic generated Ink source once per fixture, seeds the Ink runtime separately from the search strategy, and serializes save states through Ink's public save/load API. Authored projects instead load digest-verified JSON compiled by official `inklecate` 1.2.1 with count-all-visits; this supports valid Ink syntax that the `inkjs` compiler does not fully accept while keeping one identical runtime and artifact per compared in-process strategy. A later cross-runtime validation tier should replay generated witnesses in the C# runtime too.
 
+InkBench parses story and save-state JSON with a token-aware compatibility layer that matches Ink's explicit `123.0` float convention. This avoids an `inkjs` 2.4.0 Node 20 fallback-regex bug that can corrupt longer decimals beginning with `0.0`; Node 22's native reviver-source path and the portable path are regression-tested to agree.
+
 ## Neutral strategy boundary
 
 ```text
