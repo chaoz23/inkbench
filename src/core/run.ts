@@ -23,6 +23,12 @@ function isInProcess(id: RunRequest["algorithm"]): id is InProcessAlgorithmId {
 export function runBenchmark(request: RunRequest): RunReport {
   if (!Number.isSafeInteger(request.searchSeed)) throw new RangeError("search seed must be a safe integer");
   if (!Number.isSafeInteger(request.budget) || request.budget < 1) throw new RangeError("budget must be a positive integer");
+  if (request.timeBudgetMs !== undefined && (!Number.isSafeInteger(request.timeBudgetMs) || request.timeBudgetMs < 1)) {
+    throw new RangeError("time budget must be a positive integer");
+  }
+  if (request.timeBudgetMs !== undefined && request.resources?.maxTimeMs !== undefined) {
+    throw new RangeError("timeBudgetMs and resources.maxTimeMs are mutually exclusive; one is a planned budget and the other is an emergency guard");
+  }
   if (request.algorithm === "inkcheck") return runInkCheckAdapter(request);
   if (!isInProcess(request.algorithm)) throw new RangeError(`unknown algorithm: ${request.algorithm}`);
 
@@ -30,11 +36,18 @@ export function runBenchmark(request: RunRequest): RunReport {
   const runId = benchmarkRunId(request);
   const wallStart = performance.now();
   const cpuStart = process.cpuUsage();
-  const guards = new ResourceGuards(request.resources);
+  const guards = new ResourceGuards({
+    ...request.resources,
+    ...(request.timeBudgetMs === undefined ? {} : { maxTimeMs: request.timeBudgetMs }),
+  });
+  const primaryBudget = request.timeBudgetMs === undefined
+    ? { unit: "choice-transitions" as const, limit: request.budget }
+    : { unit: "wall-ms" as const, limit: request.timeBudgetMs };
   let controller: InstrumentedController | undefined;
   let sequence = 0;
   let lastProgressTransition = 0;
   let lastProgressAt = Date.now();
+  let lastDiscoveryCount = 0;
   let progressError: string | null = null;
 
   const emit = (type: RunProgressEvent["type"], stopReason: ResourceStopReason | null = null): void => {
@@ -50,7 +63,10 @@ export function runBenchmark(request: RunRequest): RunReport {
       elapsedMs: performance.now() - wallStart,
       transitions,
       transitionBudget: request.budget,
-      budgetFraction: Math.min(1, transitions / request.budget),
+      budget: primaryBudget,
+      budgetFraction: Math.min(1, request.timeBudgetMs === undefined
+        ? transitions / request.budget
+        : (performance.now() - wallStart) / request.timeBudgetMs),
       coverage: controller?.coverage ?? null,
       discoveredBugIds: controller?.bugDiscoveries.map((discovery) => discovery.bugId) ?? [],
       runtimeFindings: controller?.runtimeFindings.length ?? 0,
@@ -69,9 +85,12 @@ export function runBenchmark(request: RunRequest): RunReport {
   try {
     controller = new InstrumentedController(request.fixture, request.budget, request.storySeed, {
       guards,
-      onTransition: (result) => {
+      onTransition: () => {
         const now = Date.now();
-        if (result.newlyDiscoveredBugIds.length > 0) emit("discovery");
+        if (controller!.bugDiscoveries.length > lastDiscoveryCount) {
+          lastDiscoveryCount = controller!.bugDiscoveries.length;
+          emit("discovery");
+        }
         if (
           controller!.transitions - lastProgressTransition >= guards.progressIntervalTransitions
           || now - lastProgressAt >= guards.progressIntervalMs
@@ -84,7 +103,9 @@ export function runBenchmark(request: RunRequest): RunReport {
     });
     const outcome = searcher.run(controller, request.searchSeed);
     const stopReason = controller.resourceStopReason
-      ?? (controller.transitions >= request.budget ? "budget" : "search-exhausted");
+      ?? (controller.transitions >= request.budget
+        ? request.timeBudgetMs === undefined ? "budget" : "work-ceiling"
+        : "search-exhausted");
     const cpu = process.cpuUsage(cpuStart);
     const report: RunReport = {
       schemaVersion: RUN_REPORT_SCHEMA_VERSION,
@@ -101,7 +122,8 @@ export function runBenchmark(request: RunRequest): RunReport {
       storySeed: request.storySeed,
       difficulty: request.fixture.manifest.difficulty,
       dimensions: request.fixture.manifest.dimensions,
-      budget: { unit: "choice-transitions", limit: request.budget },
+      budget: primaryBudget,
+      workBudget: { unit: "choice-transitions", limit: request.budget },
       counts: {
         transitions: controller.transitions,
         launches: controller.launches,
@@ -113,14 +135,18 @@ export function runBenchmark(request: RunRequest): RunReport {
       discoveredBugs: controller.bugDiscoveries,
       runtimeFindings: controller.runtimeFindings,
       plantedBugIds: request.fixture.manifest.bugs.map((bug) => bug.id),
+      discoveryTimingBasis: "global-work",
       timing: {
         wallMs: performance.now() - wallStart,
         cpuMs: (cpu.user + cpu.system) / 1_000,
       },
+      parallelism: { requested: 1, effective: 1, mode: "single-process" },
       stopReason,
       resources: controller.resourceUsage(stopReason),
       runtime: { harnessVersion: INKBENCH_VERSION, runContractVersion: RUN_CONTRACT_VERSION, engine: "inkjs", engineVersion: "2.4.0", node: process.version, platform: `${process.platform}-${process.arch}` },
-      status: stopReason === "memory" || stopReason === "time" ? "resource-stopped" : "completed",
+      status: stopReason === "memory" || stopReason === "work-ceiling" || (stopReason === "time" && request.timeBudgetMs === undefined)
+        ? "resource-stopped"
+        : "completed",
       error: null,
       notes: [
         ...(request.fixture.tier !== "generated-planted"
@@ -151,7 +177,8 @@ export function runBenchmark(request: RunRequest): RunReport {
       storySeed: request.storySeed,
       difficulty: request.fixture.manifest.difficulty,
       dimensions: request.fixture.manifest.dimensions,
-      budget: { unit: "choice-transitions", limit: request.budget },
+      budget: primaryBudget,
+      workBudget: { unit: "choice-transitions", limit: request.budget },
       counts: {
         transitions: controller?.transitions ?? 0,
         launches: controller?.launches ?? 0,
@@ -163,7 +190,9 @@ export function runBenchmark(request: RunRequest): RunReport {
       discoveredBugs: controller?.bugDiscoveries ?? [],
       runtimeFindings: controller?.runtimeFindings ?? [],
       plantedBugIds: request.fixture.manifest.bugs.map((bug) => bug.id),
+      discoveryTimingBasis: "global-work",
       timing: { wallMs: performance.now() - wallStart, cpuMs: (cpu.user + cpu.system) / 1_000 },
+      parallelism: { requested: 1, effective: 1, mode: "single-process" },
       stopReason: "error",
       resources: controller?.resourceUsage("error") ?? null,
       runtime: { harnessVersion: INKBENCH_VERSION, runContractVersion: RUN_CONTRACT_VERSION, engine: "inkjs", engineVersion: "2.4.0", node: process.version, platform: `${process.platform}-${process.arch}` },

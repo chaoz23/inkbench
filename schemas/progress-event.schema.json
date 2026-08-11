@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/chaoz23/inkbench/blob/main/schemas/progress-event.schema.json",
-  "title": "InkBench progress event v1",
+  "title": "InkBench progress event v2",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "sequence", "type", "runId", "fixtureId", "algorithm", "elapsedMs", "transitions", "transitionBudget", "budgetFraction", "coverage", "discoveredBugIds", "runtimeFindings", "processMemory", "snapshotMemory", "stopReason"],
+  "required": ["schemaVersion", "sequence", "type", "runId", "fixtureId", "algorithm", "elapsedMs", "transitions", "transitionBudget", "budget", "budgetFraction", "coverage", "discoveredBugIds", "runtimeFindings", "processMemory", "snapshotMemory", "stopReason"],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "sequence": { "type": "integer", "minimum": 1 },
     "type": { "enum": ["run_start", "progress", "discovery", "run_end"] },
     "runId": { "type": "string", "minLength": 1 },
@@ -15,12 +15,20 @@
     "elapsedMs": { "type": "number", "minimum": 0 },
     "transitions": { "type": "integer", "minimum": 0 },
     "transitionBudget": { "type": "integer", "minimum": 1 },
+    "budget": {
+      "type": "object",
+      "required": ["unit", "limit"],
+      "properties": {
+        "unit": { "enum": ["choice-transitions", "inkcheck-states", "wall-ms"] },
+        "limit": { "type": "integer", "minimum": 1 }
+      }
+    },
     "budgetFraction": { "type": "number", "minimum": 0, "maximum": 1 },
     "coverage": { "type": ["object", "null"] },
     "discoveredBugIds": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
     "runtimeFindings": { "type": "integer", "minimum": 0 },
     "processMemory": { "type": "object" },
     "snapshotMemory": { "type": ["object", "null"] },
-    "stopReason": { "enum": [null, "budget", "search-exhausted", "memory", "time", "cancelled", "error"] }
+    "stopReason": { "enum": [null, "budget", "work-ceiling", "search-exhausted", "memory", "time", "cancelled", "error"] }
   }
 }

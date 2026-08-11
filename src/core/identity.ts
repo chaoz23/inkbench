@@ -14,6 +14,8 @@ export function benchmarkRunId(request: RunRequest): string {
     searchSeed: request.searchSeed,
     storySeed: request.storySeed,
     budget: request.budget,
+    timeBudgetMs: request.timeBudgetMs ?? null,
+    inkcheckOptions: request.inkcheckOptions ?? {},
     resources: request.resources ?? {},
   });
 }

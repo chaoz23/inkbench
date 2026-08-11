@@ -7,7 +7,7 @@ interface FrontierEdge {
   choiceIndex: number;
 }
 
-const MAX_DEPTH = 100;
+const MAX_DEPTH = 1_000;
 
 function edges(controller: InstrumentedController, observation: Observation): FrontierEdge[] {
   return observation.choices.map((choice) => {
@@ -18,7 +18,7 @@ function edges(controller: InstrumentedController, observation: Observation): Fr
 
 export const systematicSearcher: Searcher = {
   id: "systematic",
-  version: "dfs-semantic-dedup-v1",
+  version: "dfs-semantic-dedup-v2-depth-1000",
   run(controller) {
     const root = controller.launch();
     const frontier = edges(controller, root).reverse();

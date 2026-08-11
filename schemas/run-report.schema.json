@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/chaoz23/inkbench/blob/main/schemas/run-report.schema.json",
-  "title": "InkBench run report v2",
+  "title": "InkBench run report v3",
   "type": "object",
-  "required": ["schemaVersion", "runId", "fixtureId", "fixtureGeneratorVersion", "fixtureSourceSha256", "benchmarkTier", "family", "algorithm", "algorithmVersion", "fixtureSeed", "searchSeed", "storySeed", "difficulty", "dimensions", "budget", "counts", "coverage", "coverageItems", "discoveredBugs", "runtimeFindings", "plantedBugIds", "timing", "stopReason", "resources", "runtime", "status", "error", "notes"],
+  "required": ["schemaVersion", "runId", "fixtureId", "fixtureGeneratorVersion", "fixtureSourceSha256", "benchmarkTier", "family", "algorithm", "algorithmVersion", "fixtureSeed", "searchSeed", "storySeed", "difficulty", "dimensions", "budget", "workBudget", "counts", "coverage", "coverageItems", "discoveredBugs", "runtimeFindings", "plantedBugIds", "discoveryTimingBasis", "timing", "parallelism", "stopReason", "resources", "runtime", "status", "error", "notes"],
   "properties": {
-    "schemaVersion": { "const": 2 },
+    "schemaVersion": { "const": 3 },
     "runId": { "type": "string" },
     "fixtureId": { "type": "string" },
     "fixtureGeneratorVersion": { "type": "string" },
@@ -21,6 +21,14 @@
     "dimensions": { "type": "object" },
     "budget": {
       "type": "object",
+      "required": ["unit", "limit"],
+      "properties": {
+        "unit": { "enum": ["choice-transitions", "inkcheck-states", "wall-ms"] },
+        "limit": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "workBudget": {
+      "type": ["object", "null"],
       "required": ["unit", "limit"],
       "properties": {
         "unit": { "enum": ["choice-transitions", "inkcheck-states"] },
@@ -50,8 +58,18 @@
     "discoveredBugs": { "type": "array", "items": { "type": "object" } },
     "runtimeFindings": { "type": "array", "items": { "type": "object" } },
     "plantedBugIds": { "type": "array", "items": { "type": "string" } },
+    "discoveryTimingBasis": { "enum": ["global-work", "final-only"] },
     "timing": { "type": "object" },
-    "stopReason": { "enum": ["budget", "search-exhausted", "memory", "time", "cancelled", "error"] },
+    "parallelism": {
+      "type": "object",
+      "required": ["requested", "effective", "mode"],
+      "properties": {
+        "requested": { "type": ["integer", "string", "null"] },
+        "effective": { "type": ["integer", "null"] },
+        "mode": { "type": "string" }
+      }
+    },
+    "stopReason": { "enum": ["budget", "work-ceiling", "search-exhausted", "memory", "time", "cancelled", "error"] },
     "resources": {
       "type": ["object", "null"],
       "required": ["limits", "stopReason", "process", "snapshots", "coverageIndexBytes", "peakCoverageIndexBytes"],
@@ -64,7 +82,7 @@
             "timeCapMs": { "type": ["integer", "null"], "minimum": 1 }
           }
         },
-        "stopReason": { "enum": ["budget", "search-exhausted", "memory", "time", "cancelled", "error"] },
+        "stopReason": { "enum": ["budget", "work-ceiling", "search-exhausted", "memory", "time", "cancelled", "error"] },
         "process": { "type": "object", "required": ["peak", "final"] },
         "snapshots": { "type": "object", "required": ["created", "released", "current", "peak", "explicitReferences", "currentBytes", "peakBytes", "checkpointBytes", "peakCheckpointBytes"] },
         "coverageIndexBytes": { "type": "integer", "minimum": 0 },
@@ -76,7 +94,7 @@
       "required": ["harnessVersion", "runContractVersion", "engine", "engineVersion", "node", "platform"],
       "properties": {
         "harnessVersion": { "type": "string" },
-        "runContractVersion": { "const": "resource-bounded-v2" },
+        "runContractVersion": { "const": "marathon-v3" },
         "engine": { "type": "string" },
         "engineVersion": { "type": "string" },
         "node": { "type": "string" },

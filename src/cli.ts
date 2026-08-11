@@ -27,10 +27,10 @@ Usage:
   inkbench generate --family <name> [--fixture-seed N] [--difficulty N] [--out DIR]
   inkbench run --family <name> --algorithm random|systematic|coverage|swarm|inkcheck
                [--fixture-seed N] [--search-seed N] [--story-seed N]
-               [--difficulty N] [--budget N] [--inkcheck-command PATH] [--json]
+               [--difficulty N] [--budget N] [--time-budget-ms N] [--inkcheck-command PATH] [--json]
                [--isolated] [--max-memory-mb N] [--max-time-seconds N]
                [--worker-heap-mb N] [--progress ndjson|off] [--progress-file FILE]
-  inkbench experiment [--preset quick|development|mature] [--config FILE] [--out DIR]
+  inkbench experiment [--preset quick|development|mature|marathon-20m|marathon-60m] [--config FILE] [--out DIR]
                       [--inkcheck-command PATH] [--isolated] [--resume]
                       [--max-memory-mb N] [--max-time-seconds N]
                       [--worker-heap-mb N] [--progress ndjson|off]
@@ -38,10 +38,10 @@ Usage:
   inkbench corpus verify
   inkbench corpus run --story <id> --algorithm random|systematic|coverage|swarm|inkcheck
                       [--search-seed N] [--story-seed N] [--budget N]
-                      [--inkcheck-command PATH] [--json] [--isolated]
+                      [--time-budget-ms N] [--inkcheck-command PATH] [--json] [--isolated]
                       [--max-memory-mb N] [--max-time-seconds N]
                       [--worker-heap-mb N] [--progress ndjson|off] [--progress-file FILE]
-  inkbench corpus experiment [--preset smoke|development|mature] [--config FILE]
+  inkbench corpus experiment [--preset smoke|development|mature|marathon-20m|marathon-60m] [--config FILE]
                              [--out DIR] [--inkcheck-command PATH] [--isolated] [--resume]
                              [--max-memory-mb N] [--max-time-seconds N]
                              [--worker-heap-mb N] [--progress ndjson|off]
@@ -50,10 +50,10 @@ Usage:
   inkbench mutants run --story the-intercept-20
                        --algorithm random|systematic|coverage|swarm|inkcheck
                        [--search-seed N] [--story-seed N] [--budget N]
-                       [--inkcheck-command PATH] [--json] [--isolated]
+                       [--time-budget-ms N] [--inkcheck-command PATH] [--json] [--isolated]
                        [--max-memory-mb N] [--max-time-seconds N]
                        [--worker-heap-mb N] [--progress ndjson|off] [--progress-file FILE]
-  inkbench mutants experiment [--preset smoke|development|mature] [--config FILE]
+  inkbench mutants experiment [--preset smoke|development|mature|marathon-20m|marathon-60m] [--config FILE]
                               [--out DIR] [--inkcheck-command PATH] [--isolated] [--resume]
                               [--max-memory-mb N] [--max-time-seconds N]
                               [--worker-heap-mb N] [--progress ndjson|off]
@@ -162,6 +162,22 @@ function preset(name: string): ExperimentConfig {
       resources: { maxMemoryMb: 1_536, maxTimeMs: 1_800_000, progressIntervalTransitions: 10_000 },
     };
   }
+  if (name === "marathon-20m" || name === "marathon-60m") {
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      families: ["deep-corridor", "rare-prefix", "combination-lock", "novelty-honeypot", "false-novelty", "delayed-consequence", "order-dependent", "compound-needle"],
+      algorithms: ["random", "systematic", "coverage", "swarm", "inkcheck"],
+      fixtureSeeds: [101],
+      searchSeeds: [101, 102, 103],
+      budgets: [name === "marathon-20m" ? 20 * 60 * 1_000 : 60 * 60 * 1_000],
+      budgetMode: "wall-time",
+      workBudgetCeiling: 100_000_000,
+      difficulty: 10,
+      storySeed: 1,
+      inkcheckOptions: { search: "portfolio", minRepro: false, maxDepth: 1_000, concurrency: 1 },
+      resources: { maxMemoryMb: 4_096, progressIntervalTransitions: 10_000, progressIntervalMs: 1_000 },
+    };
+  }
   usage(`unknown preset ${name}`);
 }
 
@@ -185,6 +201,9 @@ function validateConfig(input: unknown): ExperimentConfig {
   }
   if (!Number.isSafeInteger(record.difficulty) || (record.difficulty ?? 0) < 1 || (record.difficulty ?? 0) > 10) usage("difficulty must be 1..10");
   if (!Number.isSafeInteger(record.storySeed) || (record.storySeed ?? 0) < 1) usage("storySeed must be a positive integer");
+  if (record.budgetMode !== undefined && record.budgetMode !== "work" && record.budgetMode !== "wall-time") usage("budgetMode must be work or wall-time");
+  if (record.budgetMode === "wall-time" && (!Number.isSafeInteger(record.workBudgetCeiling) || (record.workBudgetCeiling ?? 0) < 1)) usage("wall-time configs require a positive workBudgetCeiling");
+  if (record.budgetMode === "wall-time" && record.resources?.maxTimeMs !== undefined) usage("wall-time configs cannot also use resources.maxTimeMs");
   validateResources(record.resources);
   return record as ExperimentConfig;
 }
@@ -210,8 +229,10 @@ function commandGenerate(args: string[]): void {
 async function executeRun(args: string[], request: Parameters<typeof runBenchmark>[0]) {
   const resources = resourcesFromArgs(args, request.resources);
   const onProgress = progressWriter(args);
+  const timeBudgetMs = optionalInteger(args, "--time-budget-ms");
   const configured = {
     ...request,
+    ...(timeBudgetMs === undefined ? {} : { timeBudgetMs }),
     ...(resources ? { resources } : {}),
     ...(onProgress ? { onProgress } : {}),
   };
@@ -221,6 +242,10 @@ async function executeRun(args: string[], request: Parameters<typeof runBenchmar
     ...(heapLimitMb === undefined ? {} : { heapLimitMb }),
     ...(onProgress ? { onProgress } : {}),
   });
+}
+
+function printBudget(report: Awaited<ReturnType<typeof executeRun>>): void {
+  console.log(`budget: ${report.budget.limit} ${report.budget.unit}; work consumed: ${report.counts.transitions} ${report.workBudget?.unit ?? "native units"}; ${report.timing.wallMs.toFixed(1)} ms wall`);
 }
 
 async function commandRun(args: string[]): Promise<void> {
@@ -240,7 +265,7 @@ async function commandRun(args: string[]): Promise<void> {
   } else {
     const first = report.discoveredBugs[0];
     console.log(`${report.algorithm} on ${report.fixtureId}: ${report.status}`);
-    console.log(`budget: ${report.counts.transitions}/${report.budget.limit} ${report.budget.unit}; ${report.timing.wallMs.toFixed(1)} ms wall`);
+    printBudget(report);
     console.log(first ? `found ${first.bugId} at transition ${first.transition}; replay [${first.choicePath.join(", ")}]` : "planted bug not discovered within budget");
     if (report.coverage) console.log(`empirical coverage: ${report.coverage.locations} locations, ${report.coverage.edges} edges, ${report.coverage.semanticStates} semantic states`);
     if (report.error) console.error(report.error);
@@ -259,8 +284,8 @@ async function commandExperiment(args: string[]): Promise<void> {
   const resources = resourcesFromArgs(args, config.resources);
   if (resources) config = { ...config, resources };
   const output = resolve(value(args, "--out") ?? "artifacts/experiment");
-  const isolated = args.includes("--isolated") || (!configPath && presetName === "mature");
-  if (args.includes("--resume") && !isolated) usage("--resume requires --isolated or the mature preset");
+  const isolated = args.includes("--isolated") || (!configPath && (presetName === "mature" || presetName.startsWith("marathon-")));
+  if (args.includes("--resume") && !isolated) usage("--resume requires --isolated or an isolated preset");
   const onRun = (report: Awaited<ReturnType<typeof executeRun>>, completed: number, total: number, resumed = false) => {
     const found = report.discoveredBugs.length > 0 ? "found" : "miss";
     console.error(`[${completed}/${total}] ${report.family} ${report.algorithm} budget=${report.budget.limit} ${report.status}/${found}${resumed ? " resumed" : ""}`);
@@ -321,6 +346,34 @@ function authoredPreset(name: string): AuthoredExperimentConfig {
       resources: { maxMemoryMb: 1_536, maxTimeMs: 1_800_000, progressIntervalTransitions: 10_000 },
     };
   }
+  if (name === "marathon-20m" || name === "marathon-60m") {
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      storyIds: ["heresy2"],
+      algorithms: ["random", "systematic", "coverage", "swarm", "inkcheck"],
+      searchSeeds: [101, 102, 103, 104, 105],
+      budgets: [name === "marathon-20m" ? 20 * 60 * 1_000 : 60 * 60 * 1_000],
+      budgetMode: "wall-time",
+      workBudgetCeiling: 100_000_000,
+      storySeed: 1,
+      inkcheckOptions: { search: "portfolio", minRepro: false, maxDepth: 1_000, concurrency: 1 },
+      resources: { maxMemoryMb: 4_096, progressIntervalTransitions: 10_000, progressIntervalMs: 1_000 },
+    };
+  }
+  if (name === "marathon-20m-inkcheck-product" || name === "marathon-60m-inkcheck-product") {
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      storyIds: ["heresy2"],
+      algorithms: ["inkcheck"],
+      searchSeeds: [101, 102, 103, 104, 105],
+      budgets: [name === "marathon-20m-inkcheck-product" ? 20 * 60 * 1_000 : 60 * 60 * 1_000],
+      budgetMode: "wall-time",
+      workBudgetCeiling: 100_000_000,
+      storySeed: 1,
+      inkcheckOptions: {},
+      resources: { maxMemoryMb: 4_096, progressIntervalTransitions: 10_000, progressIntervalMs: 1_000 },
+    };
+  }
   usage(`unknown corpus preset ${name}`);
 }
 
@@ -335,6 +388,9 @@ function validateAuthoredConfig(input: unknown): AuthoredExperimentConfig {
     if (!Array.isArray(values) || values.length === 0 || !values.every((item) => Number.isSafeInteger(item) && item >= (name === "searchSeeds" ? 0 : 1))) usage(`${name} contains an invalid integer`);
   }
   if (!Number.isSafeInteger(record.storySeed) || (record.storySeed ?? 0) < 1) usage("storySeed must be a positive integer");
+  if (record.budgetMode !== undefined && record.budgetMode !== "work" && record.budgetMode !== "wall-time") usage("budgetMode must be work or wall-time");
+  if (record.budgetMode === "wall-time" && (!Number.isSafeInteger(record.workBudgetCeiling) || (record.workBudgetCeiling ?? 0) < 1)) usage("wall-time configs require a positive workBudgetCeiling");
+  if (record.budgetMode === "wall-time" && record.resources?.maxTimeMs !== undefined) usage("wall-time configs cannot also use resources.maxTimeMs");
   validateResources(record.resources);
   return record as AuthoredExperimentConfig;
 }
@@ -370,7 +426,7 @@ async function commandCorpus(args: string[]): Promise<void> {
       console.log(JSON.stringify(report, null, 2));
     } else {
       console.log(`${report.algorithm} on ${storyId}: ${report.status}`);
-      console.log(`budget: ${report.counts.transitions}/${report.budget.limit} ${report.budget.unit}; ${report.timing.wallMs.toFixed(1)} ms wall`);
+      printBudget(report);
       if (report.coverage) console.log(`empirical coverage: ${report.coverage.locations} locations, ${report.coverage.edges} edges, ${report.coverage.semanticStates} semantic states`);
       console.log(`runtime findings: ${report.runtimeFindings.length}; completed episodes: ${report.counts.episodesCompleted}`);
       console.log("authored-project tier: no planted-bug probability or survival claim");
@@ -390,8 +446,8 @@ async function commandCorpus(args: string[]): Promise<void> {
     const resources = resourcesFromArgs(actionArgs, config.resources);
     if (resources) config = { ...config, resources };
     const output = resolve(value(actionArgs, "--out") ?? "artifacts/corpus");
-    const isolated = actionArgs.includes("--isolated") || (!configPath && presetName === "mature");
-    if (actionArgs.includes("--resume") && !isolated) usage("--resume requires --isolated or the mature preset");
+    const isolated = actionArgs.includes("--isolated") || (!configPath && (presetName === "mature" || presetName.startsWith("marathon-")));
+    if (actionArgs.includes("--resume") && !isolated) usage("--resume requires --isolated or an isolated preset");
     const onRun = (report: Awaited<ReturnType<typeof executeRun>>, completed: number, total: number, resumed = false) => {
       console.error(`[${completed}/${total}] ${report.fixtureId} ${report.algorithm} budget=${report.budget.limit} ${report.status}${resumed ? " resumed" : ""}`);
     };
@@ -455,6 +511,34 @@ function mutantPreset(name: string): MutantExperimentConfig {
       resources: { maxMemoryMb: 1_536, maxTimeMs: 1_800_000, progressIntervalTransitions: 10_000 },
     };
   }
+  if (name === "marathon-20m" || name === "marathon-60m") {
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      storyIds,
+      algorithms: ["random", "systematic", "coverage", "swarm", "inkcheck"],
+      searchSeeds: [101, 102, 103, 104, 105],
+      budgets: [name === "marathon-20m" ? 20 * 60 * 1_000 : 60 * 60 * 1_000],
+      budgetMode: "wall-time",
+      workBudgetCeiling: 100_000_000,
+      storySeed: 1,
+      inkcheckOptions: { search: "portfolio", minRepro: false, maxDepth: 1_000, concurrency: 1 },
+      resources: { maxMemoryMb: 4_096, progressIntervalTransitions: 10_000, progressIntervalMs: 1_000 },
+    };
+  }
+  if (name === "marathon-20m-inkcheck-product" || name === "marathon-60m-inkcheck-product") {
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      storyIds,
+      algorithms: ["inkcheck"],
+      searchSeeds: [101, 102, 103, 104, 105],
+      budgets: [name === "marathon-20m-inkcheck-product" ? 20 * 60 * 1_000 : 60 * 60 * 1_000],
+      budgetMode: "wall-time",
+      workBudgetCeiling: 100_000_000,
+      storySeed: 1,
+      inkcheckOptions: {},
+      resources: { maxMemoryMb: 4_096, progressIntervalTransitions: 10_000, progressIntervalMs: 1_000 },
+    };
+  }
   usage(`unknown mutants preset ${name}`);
 }
 
@@ -469,6 +553,9 @@ function validateMutantConfig(input: unknown): MutantExperimentConfig {
     if (!Array.isArray(values) || values.length === 0 || !values.every((item) => Number.isSafeInteger(item) && item >= (name === "searchSeeds" ? 0 : 1))) usage(`${name} contains an invalid integer`);
   }
   if (!Number.isSafeInteger(record.storySeed) || (record.storySeed ?? 0) < 1) usage("storySeed must be a positive integer");
+  if (record.budgetMode !== undefined && record.budgetMode !== "work" && record.budgetMode !== "wall-time") usage("budgetMode must be work or wall-time");
+  if (record.budgetMode === "wall-time" && (!Number.isSafeInteger(record.workBudgetCeiling) || (record.workBudgetCeiling ?? 0) < 1)) usage("wall-time configs require a positive workBudgetCeiling");
+  if (record.budgetMode === "wall-time" && record.resources?.maxTimeMs !== undefined) usage("wall-time configs cannot also use resources.maxTimeMs");
   validateResources(record.resources);
   return record as MutantExperimentConfig;
 }
@@ -526,7 +613,7 @@ async function commandMutants(args: string[]): Promise<void> {
       console.log(JSON.stringify(report, null, 2));
     } else {
       console.log(`${report.algorithm} on ${storyId}: ${report.status}`);
-      console.log(`budget: ${report.counts.transitions}/${report.budget.limit} ${report.budget.unit}; ${report.timing.wallMs.toFixed(1)} ms wall`);
+      printBudget(report);
       console.log(`bugs: ${report.discoveredBugs.length}/${report.plantedBugIds.length} distinct planted defects discovered`);
       for (const discovery of report.discoveredBugs) console.log(`  ${discovery.bugId} at transition ${discovery.transition}; replay [${discovery.choicePath.join(", ")}]`);
       if (report.coverage) console.log(`empirical coverage: ${report.coverage.locations} locations, ${report.coverage.edges} edges, ${report.coverage.semanticStates} semantic states`);
@@ -546,8 +633,8 @@ async function commandMutants(args: string[]): Promise<void> {
     const resources = resourcesFromArgs(actionArgs, config.resources);
     if (resources) config = { ...config, resources };
     const output = resolve(value(actionArgs, "--out") ?? "artifacts/mutants");
-    const isolated = actionArgs.includes("--isolated") || (!configPath && presetName === "mature");
-    if (actionArgs.includes("--resume") && !isolated) usage("--resume requires --isolated or the mature preset");
+    const isolated = actionArgs.includes("--isolated") || (!configPath && (presetName === "mature" || presetName.startsWith("marathon-")));
+    if (actionArgs.includes("--resume") && !isolated) usage("--resume requires --isolated or an isolated preset");
     const onRun = (report: Awaited<ReturnType<typeof executeRun>>, completed: number, total: number, resumed = false) => {
       console.error(`[${completed}/${total}] ${report.fixtureId} ${report.algorithm} budget=${report.budget.limit} ${report.status} bugs=${report.discoveredBugs.length}/${report.plantedBugIds.length}${resumed ? " resumed" : ""}`);
     };

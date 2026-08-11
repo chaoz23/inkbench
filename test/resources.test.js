@@ -5,6 +5,9 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   generateFixture,
+  InstrumentedController,
+  oracleNeutralInkSource,
+  oracleNeutralRawStateKey,
   runBenchmark,
   runBenchmarkIsolated,
   runAuthoredExperimentIsolated,
@@ -12,6 +15,48 @@ import {
   writeAuthoredExperiment,
   writeExperiment,
 } from "../dist/index.js";
+
+test("planted oracles are private scoring data, not search observations", () => {
+  const original = generateFixture("shallow-obvious", 1, 1);
+  const fixture = {
+    ...original,
+    source: `VAR ib_bug = 0
+-> start
+=== start ===
++ [Trigger]
+  ~ ib_bug = 1
+  -> shared
++ [Safe]
+  -> shared
+=== shared ===
+Done.
+-> END
+`,
+    manifest: { ...original.manifest, locations: ["start", "shared"] },
+  };
+  const bugController = new InstrumentedController(fixture, 1, 1);
+  bugController.launch();
+  const bugObservation = bugController.step(0).after;
+  const safeController = new InstrumentedController(fixture, 1, 1);
+  safeController.launch();
+  const safeObservation = safeController.step(1).after;
+  assert.equal(bugController.bugDiscoveries.length, 1);
+  assert.ok(!bugObservation.events.some((event) => event.kind === "bug"));
+  assert.equal(bugObservation.semanticKey, safeObservation.semanticKey);
+  assert.equal(
+    oracleNeutralRawStateKey('{"variablesState":{"ib_bug":1,"x":2}}', ["ib_bug"]),
+    oracleNeutralRawStateKey('{"variablesState":{"ib_bug":0,"x":2}}', ["ib_bug"]),
+  );
+  const neutral = oracleNeutralInkSource(fixture.source, {
+    fixture,
+    algorithm: "inkcheck",
+    searchSeed: 1,
+    storySeed: 1,
+    budget: 10,
+  });
+  assert.ok(!neutral.includes("ib_bug"));
+  assert.match(neutral, /inkbench_oracle_sink = inkbench_oracle_sink/);
+});
 
 test("snapshot ownership charges retained frontiers instead of retaining every transition", () => {
   const fixture = generateFixture("compound-needle", 1, 2);
@@ -40,7 +85,7 @@ test("authored-project matrices use the same isolated resource contract", async 
       resources: { maxMemoryMb: 128, progressIntervalTransitions: 5 },
     }, { outputDirectory: directory, resume: true, retainCoverageItems: false });
     assert.equal(result.runs.length, 2);
-    assert.equal(result.runs[0].schemaVersion, 2);
+    assert.equal(result.runs[0].schemaVersion, 3);
     assert.equal(result.runs[0].benchmarkTier, "authored-project");
     assert.equal(result.runs[0].stopReason, "budget");
     assert.equal(result.runs[0].resources.stopReason, "budget");
@@ -76,6 +121,29 @@ test("resource guards return partial evidence before an unsafe heap boundary", (
   assert.equal(events.at(-1).stopReason, "memory");
 });
 
+test("planned wall-time expiry is completed evidence with a separate native work ceiling", () => {
+  const events = [];
+  const report = runBenchmark({
+    fixture: generateFixture("compound-needle", 1, 4),
+    algorithm: "random",
+    searchSeed: 1,
+    storySeed: 1,
+    budget: 100_000_000,
+    timeBudgetMs: 1,
+    resources: { maxMemoryMb: 128, progressIntervalTransitions: 1 },
+    onProgress: (event) => events.push(event),
+  });
+  assert.equal(report.status, "completed");
+  assert.equal(report.stopReason, "time");
+  assert.deepEqual(report.budget, { unit: "wall-ms", limit: 1 });
+  assert.deepEqual(report.workBudget, { unit: "choice-transitions", limit: 100_000_000 });
+  assert.deepEqual(report.parallelism, { requested: 1, effective: 1, mode: "single-process" });
+  assert.equal(report.discoveryTimingBasis, "global-work");
+  assert.equal(events[0].schemaVersion, 2);
+  assert.deepEqual(events[0].budget, report.budget);
+  assert.equal(events.at(-1).budgetFraction, 1);
+});
+
 test("InkCheck adapter forwards resource guards and preserves external stop reasons", () => {
   const directory = mkdtempSync(join(tmpdir(), "inkbench-inkcheck-adapter-"));
   const command = join(directory, "mock-inkcheck.js");
@@ -93,11 +161,11 @@ process.stdout.write(JSON.stringify({
   compile: { success: true },
   explore: {
     statesExplored: 77,
-    endingsFound: [],
+    endingsFound: [{ choiceIndices: [2], path: ["Obvious option 3"], firstDiscoveredAtState: 5 }],
     exhaustive: false,
     truncatedBy: { maxStates: false, memory: true, time: false }
   }
-}));
+}, null, 2));
 `, "utf8");
     const report = runBenchmark({
       fixture: generateFixture("shallow-obvious", 1, 1),
@@ -111,6 +179,10 @@ process.stdout.write(JSON.stringify({
     assert.equal(report.status, "resource-stopped");
     assert.equal(report.stopReason, "memory");
     assert.equal(report.counts.transitions, 77);
+    assert.equal(report.discoveredBugs.length, 1);
+    assert.equal(report.discoveryTimingBasis, "final-only");
+    assert.equal(report.parallelism.requested, 1);
+    assert.match(report.notes.join("\n"), /Stream-parsed 1 ending paths/);
     assert.equal(report.resources, null);
   } finally {
     rmSync(directory, { recursive: true, force: true });

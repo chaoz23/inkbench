@@ -1,4 +1,4 @@
-import { SCHEMA_VERSION, type AlgorithmId, type ComplementarityCell, type ExperimentConfig, type ExperimentSummary, type ProbabilityCell, type ResourceCell, type RunReport, type SurvivalPoint } from "../core/types.js";
+import { SCHEMA_VERSION, type AlgorithmId, type ComplementarityCell, type ExperimentConfig, type ExperimentSummary, type ProbabilityCell, type ResourceCell, type RunReport, type SurvivalPoint, type SurvivalTimePoint } from "../core/types.js";
 
 function median(values: number[]): number | null {
   if (values.length === 0) return null;
@@ -33,16 +33,52 @@ function probabilityCells(runs: RunReport[]): ProbabilityCell[] {
       runs: values.length,
       discoveries: discovered.length,
       probability: discovered.length / values.length,
-      medianTransitionsToDiscovery: median(discovered.map((run) => run.discoveredBugs[0]!.transition)),
+      medianTransitionsToDiscovery: median(discovered
+        .filter((run) => run.discoveryTimingBasis === "global-work")
+        .map((run) => run.discoveredBugs[0]!.transition)),
+      medianElapsedMsToDiscovery: median(discovered
+        .filter((run) => run.discoveryTimingBasis === "global-work")
+        .map((run) => run.discoveredBugs[0]!.elapsedMs)),
       meanWallMs: mean(values.map((run) => run.timing.wallMs)),
       meanCpuMs: cpuValues.length === 0 ? null : mean(cpuValues),
     };
   }).sort((left, right) => left.budget - right.budget || left.family.localeCompare(right.family) || left.algorithm.localeCompare(right.algorithm));
 }
 
+function survivalTimeCells(runs: RunReport[]): SurvivalTimePoint[] {
+  const groups = new Map<string, RunReport[]>();
+  for (const run of runs.filter((candidate) => candidate.status === "completed" && candidate.discoveryTimingBasis === "global-work")) {
+    const values = groups.get(groupKey(run)) ?? [];
+    values.push(run);
+    groups.set(groupKey(run), values);
+  }
+  const points: SurvivalTimePoint[] = [];
+  for (const values of groups.values()) {
+    const first = values[0]!;
+    const eventTimes = [...new Set(values.flatMap((run) => run.discoveredBugs[0] ? [run.discoveredBugs[0].elapsedMs] : []))].sort((a, b) => a - b);
+    let survival = 1;
+    points.push({ family: first.family, algorithm: first.algorithm, budget: first.budget.limit, elapsedMs: 0, atRisk: values.length, discoveries: 0, survival });
+    for (const elapsedMs of eventTimes) {
+      const atRisk = values.filter((run) => {
+        const event = run.discoveredBugs[0]?.elapsedMs;
+        return event === undefined ? run.timing.wallMs >= elapsedMs : event >= elapsedMs;
+      }).length;
+      const discoveries = values.filter((run) => run.discoveredBugs[0]?.elapsedMs === elapsedMs).length;
+      if (atRisk > 0) survival *= 1 - discoveries / atRisk;
+      points.push({ family: first.family, algorithm: first.algorithm, budget: first.budget.limit, elapsedMs, atRisk, discoveries, survival });
+    }
+    const censorAt = Math.max(...values.map((run) => run.timing.wallMs));
+    if (eventTimes.at(-1) !== censorAt) {
+      const atRisk = values.filter((run) => (run.discoveredBugs[0]?.elapsedMs ?? run.timing.wallMs + 1) > censorAt).length;
+      points.push({ family: first.family, algorithm: first.algorithm, budget: first.budget.limit, elapsedMs: censorAt, atRisk, discoveries: 0, survival });
+    }
+  }
+  return points.sort((left, right) => left.budget - right.budget || left.family.localeCompare(right.family) || left.algorithm.localeCompare(right.algorithm) || left.elapsedMs - right.elapsedMs);
+}
+
 function survivalCells(runs: RunReport[]): SurvivalPoint[] {
   const groups = new Map<string, RunReport[]>();
-  for (const run of runs.filter((candidate) => candidate.status === "completed")) {
+  for (const run of runs.filter((candidate) => candidate.status === "completed" && candidate.discoveryTimingBasis === "global-work")) {
     const values = groups.get(groupKey(run)) ?? [];
     values.push(run);
     groups.set(groupKey(run), values);
@@ -148,6 +184,7 @@ export function summarizeRuns(runs: RunReport[], config: ExperimentConfig, gener
     successfulRuns: runs.filter((run) => run.status === "completed").length,
     probability: probabilityCells(runs),
     survival: survivalCells(runs),
+    survivalTime: survivalTimeCells(runs),
     complementarity: complementarityCells(runs, config),
     resources: resourceCells(runs),
   };
@@ -206,7 +243,7 @@ export function renderMarkdown(summary: ExperimentSummary): string {
     "",
     "## Survival data",
     "",
-    "Kaplan–Meier-style right-censored points are stored in `summary.json` under `survival`. Plot survival as the fraction of planted bugs still undiscovered; lower and earlier is better.",
+    "Kaplan–Meier-style right-censored points are stored in `summary.json` under `survival` (native work) and `survivalTime` (elapsed milliseconds). Plot survival as the fraction of planted bugs still undiscovered; lower and earlier is better. Final-only InkCheck portfolio timing is excluded from both curves.",
     "",
   );
   return `${lines.join("\n")}\n`;

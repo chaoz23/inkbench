@@ -26,9 +26,11 @@ interface SnapshotRecord {
   permanent: boolean;
 }
 
-interface ControllerOptions {
+export interface ControllerOptions {
   guards?: ResourceGuards;
   onTransition?: (result: TransitionResult) => void;
+  /** Adapter replay can disable global coverage indexes to avoid charging search-output verification as a search frontier. */
+  trackCoverage?: boolean;
 }
 
 const ZERO_COVERAGE: CoverageCounts = {
@@ -148,7 +150,13 @@ function extractVariables(story: Story): Record<string, unknown> {
   return out;
 }
 
-function compile(fixture: BenchmarkFixture): string {
+export function oracleNeutralRawStateKey(rawState: string, oracleVariables: Iterable<string>): string {
+  const neutralRawState = parseInkJson(rawState) as { variablesState?: Record<string, unknown> };
+  for (const variable of oracleVariables) delete neutralRawState.variablesState?.[variable];
+  return hash(neutralRawState);
+}
+
+export function compiledFixtureStory(fixture: BenchmarkFixture): string {
   if (fixture.tier !== "generated-planted") return fixture.compiledStory;
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -175,9 +183,11 @@ export class InstrumentedController {
   private readonly coverageTracker = new CoverageTracker();
   private readonly discoveries = new Map<string, BugDiscovery>();
   private readonly findings = new Map<string, RuntimeFinding>();
+  private readonly oracleHits = new Map<string, string[]>();
   private readonly guards: ResourceGuards;
   private readonly oracleVariables: Set<string>;
   private readonly onTransition: ((result: TransitionResult) => void) | undefined;
+  private readonly trackCoverage: boolean;
   private active: SnapshotRecord | null = null;
   private nextSnapshot = 0;
   private snapshotBytes = 0;
@@ -210,7 +220,8 @@ export class InstrumentedController {
     this.guards = options.guards ?? new ResourceGuards();
     this.oracleVariables = new Set(fixture.manifest.bugs.map((bug) => bug.oracle.variable));
     this.onTransition = options.onTransition;
-    this.storyJson = compile(fixture);
+    this.trackCoverage = options.trackCoverage ?? true;
+    this.storyJson = compiledFixtureStory(fixture);
     this.story = new Story(parseInkJson(this.storyJson));
     this.story.onError = (message: string, type: number) => {
       if (type === 2) this.operationErrors.push(message);
@@ -224,8 +235,10 @@ export class InstrumentedController {
     this.rootSnapshotId = root.snapshotId;
     const rootRecord = this.snapshots.get(root.snapshotId)!;
     rootRecord.permanent = true;
-    this.coverageTracker.observeRoot(root);
-    this.observeCoverageMemory();
+    if (this.trackCoverage) {
+      this.coverageTracker.observeRoot(root);
+      this.observeCoverageMemory();
+    }
     this.recordFindings(root, 0);
     this.checkResourceBoundary(true);
   }
@@ -349,16 +362,17 @@ export class InstrumentedController {
       choice.targetPath,
     );
     this.setActive(this.snapshots.get(after.snapshotId)!);
-    const coverageDelta = this.coverageTracker.observeTransition(before, choice, after);
-    this.observeCoverageMemory();
+    const coverageDelta = this.trackCoverage
+      ? this.coverageTracker.observeTransition(before, choice, after)
+      : { ...ZERO_COVERAGE, total: 0 };
+    if (this.trackCoverage) this.observeCoverageMemory();
     this.recordFindings(after, this.transitions);
-    const newlyDiscoveredBugIds: string[] = [];
-    for (const event of after.events) {
-      if (event.kind !== "bug" || this.discoveries.has(event.value)) continue;
+    for (const bugId of this.oracleHits.get(after.snapshotId) ?? []) {
+      if (this.discoveries.has(bugId)) continue;
       const elapsedMs = performance.now() - this.searchWallStart;
       const cpu = process.cpuUsage(this.searchCpuStart);
       const discovery: BugDiscovery = {
-        bugId: event.value,
+        bugId,
         transition: this.transitions,
         elapsedMs,
         cpuMs: (cpu.user + cpu.system) / 1_000,
@@ -366,11 +380,10 @@ export class InstrumentedController {
         choiceTextPath: [...after.choiceTextPath],
         location: after.location,
       };
-      this.discoveries.set(event.value, discovery);
-      newlyDiscoveredBugIds.push(event.value);
+      this.discoveries.set(bugId, discovery);
     }
     if (after.terminal) this.episodesCompleted += 1;
-    const result = { before, choice, after, coverageDelta, transition: this.transitions, newlyDiscoveredBugIds };
+    const result = { before, choice, after, coverageDelta, transition: this.transitions };
     this.checkResourceBoundary(false);
     this.onTransition?.(result);
     return result;
@@ -385,6 +398,7 @@ export class InstrumentedController {
   private releaseIfUnused(record: SnapshotRecord): void {
     if (record.permanent || record.references > 0 || this.active?.snapshotId === record.snapshotId) return;
     if (!this.snapshots.delete(record.snapshotId)) return;
+    this.oracleHits.delete(record.snapshotId);
     this.snapshotBytes -= record.bytes;
     this.snapshotsReleased += 1;
   }
@@ -463,17 +477,18 @@ export class InstrumentedController {
       };
     });
     const terminal = isTerminalState;
-    const events: Observation["events"] = [];
+    const oracleHits: string[] = [];
     for (const bug of this.fixture.manifest.bugs) {
       if (bug.oracle.kind === "variable-equals" && allVariables[bug.oracle.variable] === bug.oracle.value) {
-        events.push({ kind: "bug", value: bug.id });
+        oracleHits.push(bug.id);
       }
     }
+    const events: Observation["events"] = [];
     for (const error of this.operationErrors) events.push({ kind: "runtime-error", value: error });
     for (const warning of this.operationWarnings) events.push({ kind: "runtime-warning", value: warning });
     if (terminal) events.push({ kind: "terminal", value: location });
     const rawState = this.story.state.ToJson();
-    const rawStateKey = hash(rawState);
+    const rawStateKey = oracleNeutralRawStateKey(rawState, this.oracleVariables);
     const semanticKey = hash({
       location,
       choices: choices.map((choice) => choice.id),
@@ -510,6 +525,7 @@ export class InstrumentedController {
       references: 0,
       permanent: false,
     });
+    this.oracleHits.set(snapshotId, oracleHits);
     this.snapshotBytes += bytes;
     this.peakSnapshotBytes = Math.max(this.peakSnapshotBytes, this.snapshotBytes);
     this.peakSnapshots = Math.max(this.peakSnapshots, this.snapshots.size);

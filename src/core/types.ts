@@ -1,8 +1,8 @@
 export const SCHEMA_VERSION = 1 as const;
-export const RUN_REPORT_SCHEMA_VERSION = 2 as const;
-export const PROGRESS_SCHEMA_VERSION = 1 as const;
+export const RUN_REPORT_SCHEMA_VERSION = 3 as const;
+export const PROGRESS_SCHEMA_VERSION = 2 as const;
 export const INKBENCH_VERSION = "0.1.0" as const;
-export const RUN_CONTRACT_VERSION = "resource-bounded-v2" as const;
+export const RUN_CONTRACT_VERSION = "marathon-v3" as const;
 
 export type BugFamily =
   | "shallow-obvious"
@@ -205,7 +205,7 @@ export interface ChoiceObservation {
 }
 
 export interface RuntimeEvent {
-  kind: "bug" | "runtime-error" | "runtime-warning" | "terminal";
+  kind: "runtime-error" | "runtime-warning" | "terminal";
   value: string;
 }
 
@@ -256,7 +256,6 @@ export interface TransitionResult {
   after: Observation;
   coverageDelta: CoverageDelta;
   transition: number;
-  newlyDiscoveredBugIds: string[];
 }
 
 export interface BugDiscovery {
@@ -279,8 +278,20 @@ export interface RuntimeFinding {
 }
 
 export interface BudgetSpec {
-  unit: "choice-transitions" | "inkcheck-states";
+  unit: "choice-transitions" | "inkcheck-states" | "wall-ms";
   limit: number;
+}
+
+export interface InkCheckOptions {
+  search?: "portfolio" | "shared" | "shared-variable";
+  /** InkCheck defaults to true. The scientific arm disables it so all work is discovery work. */
+  minRepro?: boolean;
+  /** InkCheck defaults to 100. InkBench previously forced 1,000. */
+  maxDepth?: number;
+  /** Apply InkCheck's story-shape profile. */
+  auto?: boolean;
+  /** Fixed worker ceiling for the one-core scientific arm, or InkCheck's workload-aware auto mode. */
+  concurrency?: "auto" | number;
 }
 
 export interface RunTiming {
@@ -288,7 +299,7 @@ export interface RunTiming {
   cpuMs: number | null;
 }
 
-export type ResourceStopReason = "budget" | "search-exhausted" | "memory" | "time" | "cancelled" | "error";
+export type ResourceStopReason = "budget" | "work-ceiling" | "search-exhausted" | "memory" | "time" | "cancelled" | "error";
 
 export interface ResourceLimits {
   /** Soft process-heap watermark. Defaults to 85% of V8's heap ceiling. */
@@ -345,6 +356,7 @@ export interface RunProgressEvent {
   elapsedMs: number;
   transitions: number;
   transitionBudget: number;
+  budget: BudgetSpec;
   budgetFraction: number;
   coverage: CoverageCounts | null;
   discoveredBugIds: string[];
@@ -376,14 +388,24 @@ export interface RunReport {
   storySeed: number;
   difficulty: number;
   dimensions: DifficultyCoordinates;
+  /** The controlled independent variable for this run. */
   budget: BudgetSpec;
+  /** Native search work ceiling; null only if a future adapter cannot express one. */
+  workBudget: BudgetSpec | null;
   counts: RunCounts;
   coverage: CoverageCounts | null;
   coverageItems: CoverageItems | null;
   discoveredBugs: BugDiscovery[];
   runtimeFindings: RuntimeFinding[];
   plantedBugIds: string[];
+  /** Whether discovery positions are globally comparable or only known by the final report. */
+  discoveryTimingBasis: "global-work" | "final-only";
   timing: RunTiming;
+  parallelism: {
+    requested: number | "auto" | null;
+    effective: number | null;
+    mode: string;
+  };
   /** Why work ended, independent of whether a strategy exposes resource telemetry. */
   stopReason: ResourceStopReason;
   resources: ResourceUsage | null;
@@ -405,8 +427,12 @@ export interface RunRequest {
   algorithm: AlgorithmId;
   searchSeed: number;
   storySeed: number;
+  /** Native work ceiling. For timed runs this should be deliberately non-binding. */
   budget: number;
+  /** Planned primary wall-time grant. Reaching it is a completed run, not a resource failure. */
+  timeBudgetMs?: number;
   inkcheckCommand?: string;
+  inkcheckOptions?: InkCheckOptions;
   resources?: ResourceLimits;
   onProgress?: (event: RunProgressEvent) => void;
 }
@@ -418,9 +444,12 @@ export interface ExperimentConfig {
   fixtureSeeds: number[];
   searchSeeds: number[];
   budgets: number[];
+  budgetMode?: "work" | "wall-time";
+  workBudgetCeiling?: number;
   difficulty: number;
   storySeed: number;
   inkcheckCommand?: string;
+  inkcheckOptions?: InkCheckOptions;
   resources?: ResourceLimits;
 }
 
@@ -432,6 +461,7 @@ export interface ProbabilityCell {
   discoveries: number;
   probability: number;
   medianTransitionsToDiscovery: number | null;
+  medianElapsedMsToDiscovery: number | null;
   meanWallMs: number;
   meanCpuMs: number | null;
 }
@@ -441,6 +471,16 @@ export interface SurvivalPoint {
   algorithm: AlgorithmId;
   budget: number;
   transition: number;
+  atRisk: number;
+  discoveries: number;
+  survival: number;
+}
+
+export interface SurvivalTimePoint {
+  family: BenchmarkFamily;
+  algorithm: AlgorithmId;
+  budget: number;
+  elapsedMs: number;
   atRisk: number;
   discoveries: number;
   survival: number;
@@ -482,6 +522,7 @@ export interface ExperimentSummary {
   successfulRuns: number;
   probability: ProbabilityCell[];
   survival: SurvivalPoint[];
+  survivalTime: SurvivalTimePoint[];
   complementarity: ComplementarityCell[];
   resources: ResourceCell[];
 }

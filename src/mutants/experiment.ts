@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { writeFileAtomic, writeNdjsonAtomicFromJsonFiles } from "../core/atomic.js";
 import { runBenchmark } from "../core/run.js";
-import { SCHEMA_VERSION, type AlgorithmId, type AuthoredFaultType, type BugFamily, type ResourceLimits, type RunReport } from "../core/types.js";
+import { SCHEMA_VERSION, type AlgorithmId, type AuthoredFaultType, type BugFamily, type InkCheckOptions, type ResourceLimits, type RunReport, type RunRequest } from "../core/types.js";
 import { getAuthoredPlantedCorpusManifest, listAuthoredPlantedStories, loadAuthoredPlantedFixture } from "./load.js";
 
 export interface MutantExperimentConfig {
@@ -10,9 +10,14 @@ export interface MutantExperimentConfig {
   storyIds: string[];
   algorithms: AlgorithmId[];
   searchSeeds: number[];
+  /** Budgets are native work units by default or planned milliseconds in wall-time mode. */
   budgets: number[];
+  budgetMode?: "work" | "wall-time";
+  /** Required in wall-time mode and intentionally set high enough not to bind. */
+  workBudgetCeiling?: number;
   storySeed: number;
   inkcheckCommand?: string;
+  inkcheckOptions?: InkCheckOptions;
   resources?: ResourceLimits;
 }
 
@@ -111,7 +116,7 @@ function bugYieldCells(runs: RunReport[], config: MutantExperimentConfig): BugYi
     const completed = matching.filter((run) => run.status === "completed");
     const plantedBugs = matching[0]?.plantedBugIds.length ?? loadAuthoredPlantedFixture(storyId).manifest.bugs.length;
     const counts = completed.map((run) => run.discoveredBugs.length);
-    const firstTimes = completed.flatMap((run) => run.discoveredBugs[0] ? [run.discoveredBugs[0].transition] : []);
+    const firstTimes = completed.flatMap((run) => run.discoveryTimingBasis === "global-work" && run.discoveredBugs[0] ? [run.discoveredBugs[0].transition] : []);
     cells.push({
       storyId,
       algorithm,
@@ -140,6 +145,7 @@ function perBugCells(runs: RunReport[], config: MutantExperimentConfig): PerBugC
       const completed = runs.filter((run) => run.fixtureId === fixtureId(storyId) && run.budget.limit === budget && run.algorithm === algorithm && run.status === "completed");
       for (const bug of bugs) {
         const discoveries = completed.flatMap((run) => {
+          if (run.discoveryTimingBasis !== "global-work") return [];
           const found = run.discoveredBugs.find((candidate) => candidate.bugId === bug.id);
           return found ? [found.transition] : [];
         });
@@ -230,9 +236,38 @@ function validateConfig(config: MutantExperimentConfig): void {
   for (const algorithm of config.algorithms) if (!algorithms.has(algorithm)) throw new RangeError(`unknown algorithm: ${algorithm}`);
   if (config.searchSeeds.length === 0 || config.searchSeeds.some((seed) => !Number.isSafeInteger(seed) || seed < 0)) throw new RangeError("searchSeeds must contain non-negative safe integers");
   if (config.budgets.length === 0 || config.budgets.some((budget) => !Number.isSafeInteger(budget) || budget < 1)) throw new RangeError("budgets must contain positive safe integers");
+  if (config.budgetMode !== undefined && config.budgetMode !== "work" && config.budgetMode !== "wall-time") throw new RangeError("budgetMode must be work or wall-time");
+  if (config.budgetMode === "wall-time" && (!Number.isSafeInteger(config.workBudgetCeiling) || (config.workBudgetCeiling ?? 0) < 1)) {
+    throw new RangeError("wall-time mode requires a positive workBudgetCeiling");
+  }
+  if (config.budgetMode === "wall-time" && config.resources?.maxTimeMs !== undefined) {
+    throw new RangeError("wall-time mode cannot also set resources.maxTimeMs");
+  }
   if (!Number.isSafeInteger(config.storySeed) || config.storySeed < 1) throw new RangeError("storySeed must be a positive safe integer");
   const available = new Set(listAuthoredPlantedStories().map((story) => story.id));
   for (const storyId of config.storyIds) if (!available.has(storyId)) throw new RangeError(`unknown authored-planted story: ${storyId}`);
+}
+
+export function mutantRunRequest(
+  config: MutantExperimentConfig,
+  fixture: RunRequest["fixture"],
+  algorithm: AlgorithmId,
+  searchSeed: number,
+  budget: number,
+): RunRequest {
+  if (config.budgetMode === "wall-time" && (!Number.isSafeInteger(config.workBudgetCeiling) || config.workBudgetCeiling! < 1)) throw new RangeError("wall-time mode requires a positive workBudgetCeiling");
+  if (config.budgetMode === "wall-time" && config.resources?.maxTimeMs !== undefined) throw new RangeError("wall-time mode cannot also set resources.maxTimeMs");
+  return {
+    fixture,
+    algorithm,
+    searchSeed,
+    storySeed: config.storySeed,
+    budget: config.budgetMode === "wall-time" ? config.workBudgetCeiling! : budget,
+    ...(config.budgetMode === "wall-time" ? { timeBudgetMs: budget } : {}),
+    ...(config.inkcheckCommand ? { inkcheckCommand: config.inkcheckCommand } : {}),
+    ...(config.inkcheckOptions ? { inkcheckOptions: config.inkcheckOptions } : {}),
+    ...(config.resources ? { resources: config.resources } : {}),
+  };
 }
 
 export function runMutantExperiment(config: MutantExperimentConfig, onRun?: (report: RunReport, completed: number, total: number) => void): MutantExperimentResult {
@@ -242,15 +277,7 @@ export function runMutantExperiment(config: MutantExperimentConfig, onRun?: (rep
   for (const storyId of config.storyIds) {
     const fixture = loadAuthoredPlantedFixture(storyId);
     for (const budget of config.budgets) for (const searchSeed of config.searchSeeds) for (const algorithm of config.algorithms) {
-      const report = runBenchmark({
-        fixture,
-        algorithm,
-        searchSeed,
-        storySeed: config.storySeed,
-        budget,
-        ...(config.inkcheckCommand ? { inkcheckCommand: config.inkcheckCommand } : {}),
-        ...(config.resources ? { resources: config.resources } : {}),
-      });
+      const report = runBenchmark(mutantRunRequest(config, fixture, algorithm, searchSeed, budget));
       runs.push(report);
       onRun?.(report, runs.length, total);
     }
@@ -271,7 +298,9 @@ export function summarizeMutantRuns(runs: RunReport[], config: MutantExperimentC
     perBug: perBugCells(runs, config),
     complementarity: complementarityCells(runs, config),
     resources: resourceCells(runs, config),
-    interpretation: "Each bug is a disclosed mutation of a pinned authored story. Fixed-budget yield excludes incomplete cells; resource-stopped runs remain in raw data and the resource table.",
+    interpretation: config.budgetMode === "wall-time"
+      ? "Each bug is a disclosed mutation of a pinned authored story. Planned wall-time expiry is a completed cell; memory stops and prematurely reached work ceilings remain incomplete and visible in raw data and the resource table."
+      : "Each bug is a disclosed mutation of a pinned authored story. Fixed-work yield excludes incomplete cells; resource-stopped runs remain in raw data and the resource table.",
   };
 }
 
@@ -338,7 +367,7 @@ export function writeMutantExperiment(outputDirectory: string, result: MutantExp
   writeFileAtomic(join(outputDirectory, "corpus-manifest.json"), `${JSON.stringify(getAuthoredPlantedCorpusManifest(), null, 2)}\n`);
   if (result.cellFiles) writeNdjsonAtomicFromJsonFiles(join(outputDirectory, "runs.ndjson"), result.cellFiles);
   else writeFileAtomic(join(outputDirectory, "runs.ndjson"), `${result.runs.map((run) => JSON.stringify(run)).join("\n")}\n`);
-  const headers = ["runId", "storyId", "algorithm", "searchSeed", "storySeed", "budgetUnit", "budget", "status", "stopReason", "transitions", "bugsDiscovered", "bugFraction", "bugIds", "wallMs", "peakHeapBytes", "peakCheckpointBytes"];
+  const headers = ["runId", "storyId", "algorithm", "searchSeed", "storySeed", "primaryBudgetUnit", "primaryBudget", "workBudgetUnit", "workBudgetLimit", "requestedParallelism", "effectiveParallelism", "parallelismMode", "status", "stopReason", "discoveryTimingBasis", "transitions", "bugsDiscovered", "bugFraction", "bugIds", "wallMs", "peakHeapBytes", "peakCheckpointBytes"];
   const rows = result.runs.map((run) => [
     run.runId,
     run.fixtureId.replace(/^authored-planted-/, ""),
@@ -347,8 +376,14 @@ export function writeMutantExperiment(outputDirectory: string, result: MutantExp
     run.storySeed,
     run.budget.unit,
     run.budget.limit,
+    run.workBudget?.unit ?? "",
+    run.workBudget?.limit ?? "",
+    run.parallelism.requested ?? "",
+    run.parallelism.effective ?? "",
+    run.parallelism.mode,
     run.status,
     run.stopReason,
+    run.discoveryTimingBasis,
     run.counts.transitions,
     run.discoveredBugs.length,
     run.plantedBugIds.length === 0 ? 0 : run.discoveredBugs.length / run.plantedBugIds.length,

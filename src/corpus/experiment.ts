@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { writeFileAtomic, writeNdjsonAtomicFromJsonFiles } from "../core/atomic.js";
 import { runBenchmark } from "../core/run.js";
-import { SCHEMA_VERSION, type AlgorithmId, type BudgetSpec, type CoverageCounts, type ResourceLimits, type RunReport } from "../core/types.js";
+import { SCHEMA_VERSION, type AlgorithmId, type BudgetSpec, type CoverageCounts, type InkCheckOptions, type ResourceLimits, type RunReport, type RunRequest } from "../core/types.js";
 import { getAuthoredCorpusManifest, listAuthoredStories, loadAuthoredFixture } from "./load.js";
 
 export interface AuthoredExperimentConfig {
@@ -11,8 +11,11 @@ export interface AuthoredExperimentConfig {
   algorithms: AlgorithmId[];
   searchSeeds: number[];
   budgets: number[];
+  budgetMode?: "work" | "wall-time";
+  workBudgetCeiling?: number;
   storySeed: number;
   inkcheckCommand?: string;
+  inkcheckOptions?: InkCheckOptions;
   resources?: ResourceLimits;
 }
 
@@ -109,7 +112,7 @@ function coverageCells(runs: RunReport[], config: AuthoredExperimentConfig): Aut
       storyId,
       algorithm,
       budget,
-      budgetUnit: algorithm === "inkcheck" ? "inkcheck-states" : "choice-transitions",
+      budgetUnit: matching[0]?.budget.unit ?? (algorithm === "inkcheck" ? "inkcheck-states" : "choice-transitions"),
       runs: matching.length,
       completed: completed.length,
       resourceStopped: matching.filter((run) => run.status === "resource-stopped").length,
@@ -185,6 +188,9 @@ export function runAuthoredExperiment(config: AuthoredExperimentConfig, onRun?: 
   if (config.algorithms.length === 0 || new Set(config.algorithms).size !== config.algorithms.length) throw new RangeError("algorithms must be non-empty and unique");
   if (config.searchSeeds.length === 0 || config.searchSeeds.some((seed) => !Number.isSafeInteger(seed) || seed < 0)) throw new RangeError("searchSeeds must contain non-negative safe integers");
   if (config.budgets.length === 0 || config.budgets.some((budget) => !Number.isSafeInteger(budget) || budget < 1)) throw new RangeError("budgets must contain positive safe integers");
+  if (config.budgetMode !== undefined && config.budgetMode !== "work" && config.budgetMode !== "wall-time") throw new RangeError("budgetMode must be work or wall-time");
+  if (config.budgetMode === "wall-time" && (!Number.isSafeInteger(config.workBudgetCeiling) || (config.workBudgetCeiling ?? 0) < 1)) throw new RangeError("wall-time mode requires a positive workBudgetCeiling");
+  if (config.budgetMode === "wall-time" && config.resources?.maxTimeMs !== undefined) throw new RangeError("wall-time mode cannot also set resources.maxTimeMs");
   if (!Number.isSafeInteger(config.storySeed) || config.storySeed < 1) throw new RangeError("storySeed must be a positive safe integer");
   const available = new Set(listAuthoredStories().map((story) => story.id));
   for (const storyId of config.storyIds) if (!available.has(storyId)) throw new RangeError(`unknown authored story: ${storyId}`);
@@ -193,20 +199,34 @@ export function runAuthoredExperiment(config: AuthoredExperimentConfig, onRun?: 
   for (const storyId of config.storyIds) {
     const fixture = loadAuthoredFixture(storyId);
     for (const budget of config.budgets) for (const searchSeed of config.searchSeeds) for (const algorithm of config.algorithms) {
-      const report = runBenchmark({
-        fixture,
-        algorithm,
-        searchSeed,
-        storySeed: config.storySeed,
-        budget,
-        ...(config.inkcheckCommand ? { inkcheckCommand: config.inkcheckCommand } : {}),
-        ...(config.resources ? { resources: config.resources } : {}),
-      });
+      const report = runBenchmark(authoredRunRequest(config, fixture, algorithm, searchSeed, budget));
       runs.push(report);
       onRun?.(report, runs.length, total);
     }
   }
   return { runs, summary: summarizeAuthoredRuns(runs, config) };
+}
+
+export function authoredRunRequest(
+  config: AuthoredExperimentConfig,
+  fixture: RunRequest["fixture"],
+  algorithm: AlgorithmId,
+  searchSeed: number,
+  budget: number,
+): RunRequest {
+  if (config.budgetMode === "wall-time" && (!Number.isSafeInteger(config.workBudgetCeiling) || config.workBudgetCeiling! < 1)) throw new RangeError("wall-time mode requires a positive workBudgetCeiling");
+  if (config.budgetMode === "wall-time" && config.resources?.maxTimeMs !== undefined) throw new RangeError("wall-time mode cannot also set resources.maxTimeMs");
+  return {
+    fixture,
+    algorithm,
+    searchSeed,
+    storySeed: config.storySeed,
+    budget: config.budgetMode === "wall-time" ? config.workBudgetCeiling! : budget,
+    ...(config.budgetMode === "wall-time" ? { timeBudgetMs: budget } : {}),
+    ...(config.inkcheckCommand ? { inkcheckCommand: config.inkcheckCommand } : {}),
+    ...(config.inkcheckOptions ? { inkcheckOptions: config.inkcheckOptions } : {}),
+    ...(config.resources ? { resources: config.resources } : {}),
+  };
 }
 
 export function summarizeAuthoredRuns(runs: RunReport[], config: AuthoredExperimentConfig): AuthoredExperimentSummary {
@@ -219,7 +239,7 @@ export function summarizeAuthoredRuns(runs: RunReport[], config: AuthoredExperim
       successfulRuns: runs.filter((run) => run.status === "completed").length,
       coverage: coverageCells(runs, config),
       complementarity: complementarityCells(runs, config),
-      interpretation: "Authored stories provide ecological-validity coverage and runtime-finding evidence. They have no planted oracle and are excluded from planted-bug probability and survival curves.",
+      interpretation: `Authored stories provide ecological-validity coverage and runtime-finding evidence. They have no planted oracle and are excluded from planted-bug probability and survival curves.${config.budgetMode === "wall-time" ? " Planned wall-time expiry is completed evidence; memory stops and prematurely reached work ceilings are incomplete." : ""}`,
   };
 }
 
@@ -282,10 +302,10 @@ export function writeAuthoredExperiment(outputDirectory: string, result: Authore
   writeFileAtomic(join(outputDirectory, "corpus-manifest.json"), `${JSON.stringify(getAuthoredCorpusManifest(), null, 2)}\n`);
   if (result.cellFiles) writeNdjsonAtomicFromJsonFiles(join(outputDirectory, "runs.ndjson"), result.cellFiles);
   else writeFileAtomic(join(outputDirectory, "runs.ndjson"), `${result.runs.map((run) => JSON.stringify(run)).join("\n")}\n`);
-  const headers = ["runId", "storyId", "algorithm", "searchSeed", "storySeed", "budgetUnit", "budget", "status", "stopReason", "transitions", "episodesCompleted", "runtimeFindings", "wallMs", "cpuMs", "peakHeapBytes", "peakRssBytes", "peakSnapshotBytes", "peakCheckpointBytes", "locations", "choices", "edges", "semanticStates", "rawStates"];
+  const headers = ["runId", "storyId", "algorithm", "searchSeed", "storySeed", "primaryBudgetUnit", "primaryBudget", "workBudgetUnit", "workBudgetLimit", "requestedParallelism", "effectiveParallelism", "parallelismMode", "status", "stopReason", "transitions", "episodesCompleted", "runtimeFindings", "wallMs", "cpuMs", "peakHeapBytes", "peakRssBytes", "peakSnapshotBytes", "peakCheckpointBytes", "locations", "choices", "edges", "semanticStates", "rawStates"];
   const rows = result.runs.map((run) => [
-    run.runId, run.fixtureId.replace(/^authored-/, ""), run.algorithm, run.searchSeed, run.storySeed, run.budget.unit, run.budget.limit,
-    run.status, run.stopReason, run.counts.transitions, run.counts.episodesCompleted, run.runtimeFindings.length, run.timing.wallMs, run.timing.cpuMs ?? "",
+    run.runId, run.fixtureId.replace(/^authored-/, ""), run.algorithm, run.searchSeed, run.storySeed, run.budget.unit, run.budget.limit, run.workBudget?.unit ?? "", run.workBudget?.limit ?? "",
+    run.parallelism.requested ?? "", run.parallelism.effective ?? "", run.parallelism.mode, run.status, run.stopReason, run.counts.transitions, run.counts.episodesCompleted, run.runtimeFindings.length, run.timing.wallMs, run.timing.cpuMs ?? "",
     run.resources?.process.peak.heapUsedBytes ?? "", run.resources?.process.peak.rssBytes ?? "", run.resources?.snapshots.peakBytes ?? "", run.resources?.snapshots.peakCheckpointBytes ?? "",
     run.coverage?.locations ?? "", run.coverage?.choices ?? "", run.coverage?.edges ?? "", run.coverage?.semanticStates ?? "", run.coverage?.rawStates ?? "",
   ]);

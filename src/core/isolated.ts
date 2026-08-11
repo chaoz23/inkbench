@@ -27,8 +27,11 @@ export async function runBenchmarkIsolated(request: RunRequest, options: Isolate
   const heapLimitMb = options.heapLimitMb ?? (requestedMemoryMb === undefined ? undefined : Math.ceil(requestedMemoryMb / 0.8));
   const workerPath = fileURLToPath(new URL("./worker.js", import.meta.url));
   const nodeArgs = [...(heapLimitMb === undefined ? [] : [`--max-old-space-size=${heapLimitMb}`]), workerPath];
-  const hardTimeoutMs = options.hardTimeoutMs
-    ?? (request.resources?.maxTimeMs === undefined ? undefined : request.resources.maxTimeMs + 30_000);
+  const requestedTimeMs = request.timeBudgetMs ?? request.resources?.maxTimeMs;
+  const finalizationGraceMs = requestedTimeMs === undefined
+    ? undefined
+    : Math.max(300_000, Math.min(1_800_000, Math.ceil(requestedTimeMs * 0.25)));
+  const hardTimeoutMs = options.hardTimeoutMs ?? (requestedTimeMs === undefined ? undefined : requestedTimeMs + finalizationGraceMs!);
 
   try {
     return await new Promise<RunReport>((resolve, reject) => {
@@ -41,7 +44,7 @@ export async function runBenchmarkIsolated(request: RunRequest, options: Isolate
         if (!line) return;
         try {
           const event = JSON.parse(line) as RunProgressEvent;
-          if (event.schemaVersion === 1 && typeof event.type === "string") options.onProgress?.(event);
+          if (event.schemaVersion === 2 && typeof event.type === "string") options.onProgress?.(event);
           else diagnostic += `${line}\n`;
         } catch {
           diagnostic += `${line}\n`;

@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { writeFileAtomic, writeNdjsonAtomicFromJsonFiles } from "../core/atomic.js";
-import type { BugFamily, ExperimentConfig, ExperimentSummary, RunReport } from "../core/types.js";
+import type { AlgorithmId, BenchmarkFixture, BugFamily, ExperimentConfig, ExperimentSummary, RunReport, RunRequest } from "../core/types.js";
 import { generateFixture } from "../fixtures/generate.js";
 import { runBenchmark } from "../core/run.js";
 import { renderMarkdown, summarizeRuns } from "./summarize.js";
@@ -13,21 +13,35 @@ export interface ExperimentResult {
   cellFiles?: string[];
 }
 
+export function experimentRunRequest(
+  config: ExperimentConfig,
+  fixture: BenchmarkFixture,
+  algorithm: AlgorithmId,
+  searchSeed: number,
+  budget: number,
+): RunRequest {
+  if (config.budgetMode === "wall-time" && (!Number.isSafeInteger(config.workBudgetCeiling) || config.workBudgetCeiling! < 1)) throw new RangeError("wall-time mode requires a positive workBudgetCeiling");
+  if (config.budgetMode === "wall-time" && config.resources?.maxTimeMs !== undefined) throw new RangeError("wall-time mode cannot also set resources.maxTimeMs");
+  return {
+    fixture,
+    algorithm,
+    searchSeed,
+    storySeed: config.storySeed,
+    budget: config.budgetMode === "wall-time" ? config.workBudgetCeiling! : budget,
+    ...(config.budgetMode === "wall-time" ? { timeBudgetMs: budget } : {}),
+    ...(config.inkcheckCommand ? { inkcheckCommand: config.inkcheckCommand } : {}),
+    ...(config.inkcheckOptions ? { inkcheckOptions: config.inkcheckOptions } : {}),
+    ...(config.resources ? { resources: config.resources } : {}),
+  };
+}
+
 export function runExperiment(config: ExperimentConfig, onRun?: (report: RunReport, completed: number, total: number) => void): ExperimentResult {
   const runs: RunReport[] = [];
   const total = config.families.length * config.fixtureSeeds.length * config.searchSeeds.length * config.algorithms.length * config.budgets.length;
   for (const family of config.families) for (const fixtureSeed of config.fixtureSeeds) {
     const fixture = generateFixture(family, fixtureSeed, config.difficulty);
     for (const budget of config.budgets) for (const searchSeed of config.searchSeeds) for (const algorithm of config.algorithms) {
-      const report = runBenchmark({
-        fixture,
-        algorithm,
-        searchSeed,
-        storySeed: config.storySeed,
-        budget,
-        ...(config.inkcheckCommand ? { inkcheckCommand: config.inkcheckCommand } : {}),
-        ...(config.resources ? { resources: config.resources } : {}),
-      });
+      const report = runBenchmark(experimentRunRequest(config, fixture, algorithm, searchSeed, budget));
       runs.push(report);
       onRun?.(report, runs.length, total);
     }
@@ -56,10 +70,11 @@ export function writeExperiment(outputDirectory: string, result: ExperimentResul
   writeFileAtomic(join(outputDirectory, "config.json"), `${JSON.stringify(result.summary.config, null, 2)}\n`);
   if (result.cellFiles) writeNdjsonAtomicFromJsonFiles(join(outputDirectory, "runs.ndjson"), result.cellFiles);
   else writeFileAtomic(join(outputDirectory, "runs.ndjson"), `${result.runs.map((run) => JSON.stringify(run)).join("\n")}\n`);
-  const headers = ["runId", "fixtureId", "fixtureGeneratorVersion", "fixtureSourceSha256", "benchmarkTier", "family", "algorithm", "fixtureSeed", "searchSeed", "storySeed", "difficulty", "budgetUnit", "budget", "status", "stopReason", "discovered", "firstDiscovery", "runtimeFindings", "transitions", "launches", "wallMs", "cpuMs", "peakHeapBytes", "peakRssBytes", "peakSnapshotBytes", "peakCheckpointBytes", "locations", "choices", "edges", "semanticStates", "rawStates"];
+  const headers = ["runId", "fixtureId", "fixtureGeneratorVersion", "fixtureSourceSha256", "benchmarkTier", "family", "algorithm", "fixtureSeed", "searchSeed", "storySeed", "difficulty", "primaryBudgetUnit", "primaryBudget", "workBudgetUnit", "workBudgetLimit", "requestedParallelism", "effectiveParallelism", "parallelismMode", "status", "stopReason", "discoveryTimingBasis", "discovered", "firstDiscoveryTransition", "firstDiscoveryElapsedMs", "runtimeFindings", "transitions", "launches", "wallMs", "cpuMs", "peakHeapBytes", "peakRssBytes", "peakSnapshotBytes", "peakCheckpointBytes", "locations", "choices", "edges", "semanticStates", "rawStates"];
   const rows = result.runs.map((run) => [
     run.runId, run.fixtureId, run.fixtureGeneratorVersion, run.fixtureSourceSha256, run.benchmarkTier, run.family, run.algorithm, run.fixtureSeed, run.searchSeed, run.storySeed, run.difficulty,
-    run.budget.unit, run.budget.limit, run.status, run.stopReason, run.discoveredBugs.length, run.discoveredBugs[0]?.transition ?? "", run.runtimeFindings.length,
+    run.budget.unit, run.budget.limit, run.workBudget?.unit ?? "", run.workBudget?.limit ?? "", run.parallelism.requested ?? "", run.parallelism.effective ?? "", run.parallelism.mode,
+    run.status, run.stopReason, run.discoveryTimingBasis, run.discoveredBugs.length, run.discoveredBugs[0]?.transition ?? "", run.discoveredBugs[0]?.elapsedMs ?? "", run.runtimeFindings.length,
     run.counts.transitions, run.counts.launches, run.timing.wallMs, run.timing.cpuMs ?? "", run.resources?.process.peak.heapUsedBytes ?? "",
     run.resources?.process.peak.rssBytes ?? "", run.resources?.snapshots.peakBytes ?? "", run.resources?.snapshots.peakCheckpointBytes ?? "", run.coverage?.locations ?? "",
     run.coverage?.choices ?? "", run.coverage?.edges ?? "", run.coverage?.semanticStates ?? "", run.coverage?.rawStates ?? "",

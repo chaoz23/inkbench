@@ -99,11 +99,11 @@ InkBench owns the story and measurement. Internal strategies receive the same ob
 
 - current location, output, tags, and legal choices;
 - global variables and declared-location visit counts;
-- terminal, warning, error, and already-observable bug events;
+- terminal, warning, and error events;
 - semantic coverage deltas; and
 - opaque handles for checkpoints they have already reached.
 
-Every strategy may explicitly retain and later restore any checkpoint it observed, then release it when no longer needed. Retained Ink save states are measured and charged to that strategy. Root and the active state are runtime infrastructure; the controller no longer keeps every historical transition forever. InkSwarm's saved colonies are therefore an allocation policy, not privileged access. Generator parameters, planted-oracle definitions and marker globals, undiscovered graph structure, and raw save JSON remain hidden.
+Every strategy may explicitly retain and later restore any checkpoint it observed, then release it when no longer needed. Retained Ink save states are measured and charged to that strategy. Root and the active state are runtime infrastructure; the controller no longer keeps every historical transition forever. InkSwarm's saved colonies are therefore an allocation policy, not privileged access. Generator parameters, planted-oracle definitions and marker globals, bug identities, undiscovered graph structure, and raw save JSON remain hidden. Oracle globals are removed from semantic and raw-state novelty keys. InkCheck receives an oracle-neutral source copy and its returned paths are scored by replay against the pinned instrumented artifact.
 
 The primary in-process budget is one **choice transition**. Checkpoint restore is not a transition, but its CPU and wall cost is measured. See [the architecture decision record](docs/architecture.md) for the full boundary and limitations.
 
@@ -138,6 +138,25 @@ inkbench mutants experiment --preset mature --out artifacts/intercept-20-mature 
 
 Resource-stopped cells remain in raw/resource summaries but are excluded from fixed-transition discovery probability because they did not receive the full requested work. Compare cross-tool runs through wall time, CPU, peak memory, and findings while retaining each tool's native budget unit.
 
+### Marathon protocol
+
+Wall-time is a first-class primary budget, distinct from an emergency guard. Reaching a planned timer yields `status: "completed"` and `stopReason: "time"`; hitting memory or the deliberately high native work ceiling first yields an incomplete resource-stopped cell. Reports retain both `budget: { unit: "wall-ms" }` and `workBudget`, so throughput never disappears behind a time-only result.
+
+The 20-minute tier stabilizes measurement, repeatability, resource behavior, and variance. The 60-minute tier changes only duration and is the first tier intended to support comparative claims:
+
+```sh
+# Hard generated planted cases: 120 serial cells, about 40 hours if none exhaust early.
+inkbench experiment --preset marathon-20m --inkcheck-command /absolute/path/to/inkcheck/dist/cli.js --out artifacts/marathon-20m --resume
+
+# Large real authored transfer case: Heresy II, 25 serial cells, at most 8h20m.
+inkbench corpus experiment --preset marathon-20m --inkcheck-command /absolute/path/to/inkcheck/dist/cli.js --out artifacts/heresy2-marathon-20m --resume
+
+# Multi-bug sanity/stress case: Intercept-20, 25 serial cells, but it may saturate early.
+inkbench mutants experiment --preset marathon-20m --inkcheck-command /absolute/path/to/inkcheck/dist/cli.js --out artifacts/intercept-20-marathon-20m --resume
+```
+
+Replace `20m` with `60m` without changing seeds or policy. On the current 8 GiB development machine the presets run cells sequentially with a 4,096 MiB heap watermark; do not run multiple marathon matrices concurrently. Intercept-20 is not by itself a marathon-quality discriminator when all strategies saturate. See [the marathon protocol](docs/marathon-protocol.md).
+
 ## Algorithms
 
 | ID | Purpose |
@@ -158,9 +177,9 @@ inkbench run \
   --budget 10000
 ```
 
-InkCheck's current local CLI default is **10,000,000 states** (with a 100,000,000 ceiling); small exhaustive stories still exit early. That is an important calibration point: InkBench's 100/500-transition cells are cold-start checks, not evidence about mature search behavior. The adapter always passes the matrix's explicit `--max-states`, memory, and time limits, so it never relies silently on InkCheck's defaults.
+InkCheck 0.7.2 defaults to **10,000,000 states** (with a 100,000,000 ceiling) and workload-aware automatic concurrency; small exhaustive stories still exit early. That is an important calibration point: InkBench's 100/500-transition cells are cold-start checks, not evidence about mature search behavior. The adapter always passes the matrix's explicit `--max-states`, story seed, memory, and time limits, so it never relies silently on InkCheck's defaults. The main marathon arm fixes `--concurrency 1`, portfolio search, no repro minimization, and depth 1,000 explicitly. Reports record requested and effective parallelism. Separate `marathon-20m-inkcheck-product` and `marathon-60m-inkcheck-product` corpus/mutant presets retain InkCheck's automatic concurrency and other product defaults for sensitivity analysis; do not pool those cells with the one-core arm.
 
-InkCheck's native “states explored” unit is close to, but not identical with, InkBench's choice-transition unit. Reports preserve that distinction and leave unavailable edge/state metrics as `null`. Do not erase the unit label in comparisons. InkCheck exposes its own internal progress stream and detailed memory telemetry; the current synchronous adapter consumes its final report and does not yet translate that stream or every telemetry field into InkBench events.
+InkCheck's native “states explored” unit is close to, but not identical with, InkBench's choice-transition unit. Reports preserve that distinction and leave unavailable edge/state metrics as `null`. Do not erase the unit label in comparisons. InkCheck exposes its own internal progress stream and detailed memory telemetry; the adapter streams its potentially large final JSON to disk, incrementally extracts ending paths, and replays their ordered-prefix delta rather than buffering or replaying every full path. It does not yet translate InkCheck's live progress or every telemetry field into InkBench events. Portfolio `firstDiscoveredAtState` values are pass-local, so InkBench marks InkCheck discovery timing `final-only` and excludes it from survival curves until InkCheck exposes portfolio-global timestamps.
 
 ## Experiment outputs
 

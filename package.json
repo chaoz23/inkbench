@@ -30,12 +30,18 @@
     "experiment:development": "node dist/cli.js experiment --preset development --out artifacts/development",
     "experiment:resource-smoke": "node dist/cli.js experiment --config examples/resource-smoke.json --out artifacts/resource-smoke --isolated --resume",
     "experiment:mature": "node dist/cli.js experiment --preset mature --out artifacts/mature --resume",
+    "experiment:marathon:20m": "node dist/cli.js experiment --preset marathon-20m --out artifacts/marathon-20m --resume",
+    "experiment:marathon:60m": "node dist/cli.js experiment --preset marathon-60m --out artifacts/marathon-60m --resume",
     "corpus:smoke": "node dist/cli.js corpus experiment --preset smoke --out artifacts/corpus-smoke",
     "corpus:mature": "node dist/cli.js corpus experiment --preset mature --out artifacts/corpus-mature --resume",
+    "corpus:marathon:20m": "node dist/cli.js corpus experiment --preset marathon-20m --out artifacts/heresy2-marathon-20m --resume",
+    "corpus:marathon:60m": "node dist/cli.js corpus experiment --preset marathon-60m --out artifacts/heresy2-marathon-60m --resume",
     "mutants:verify": "node dist/cli.js mutants verify",
     "mutants:smoke": "node dist/cli.js mutants experiment --preset smoke --out artifacts/intercept-20-smoke",
     "mutants:development": "node dist/cli.js mutants experiment --preset development --out artifacts/intercept-20-development --isolated --resume",
-    "mutants:mature": "node dist/cli.js mutants experiment --preset mature --out artifacts/intercept-20-mature --resume"
+    "mutants:mature": "node dist/cli.js mutants experiment --preset mature --out artifacts/intercept-20-mature --resume",
+    "mutants:marathon:20m": "node dist/cli.js mutants experiment --preset marathon-20m --out artifacts/intercept-20-marathon-20m --resume",
+    "mutants:marathon:60m": "node dist/cli.js mutants experiment --preset marathon-60m --out artifacts/intercept-20-marathon-60m --resume"
   },
   "keywords": [
     "ink",

@@ -3,9 +3,9 @@ import { join } from "node:path";
 import { appendLineDurable, writeFileAtomic, writeJsonAtomic } from "../core/atomic.js";
 import { benchmarkRunId } from "../core/identity.js";
 import { runBenchmarkIsolated, type IsolatedRunOptions } from "../core/isolated.js";
-import type { AlgorithmId, RunReport, RunRequest } from "../core/types.js";
+import type { AlgorithmId, RunReport } from "../core/types.js";
 import { loadAuthoredFixture } from "./load.js";
-import { summarizeAuthoredRuns, type AuthoredComplementarityCell, type AuthoredExperimentConfig, type AuthoredExperimentResult } from "./experiment.js";
+import { authoredRunRequest, summarizeAuthoredRuns, type AuthoredComplementarityCell, type AuthoredExperimentConfig, type AuthoredExperimentResult } from "./experiment.js";
 
 export interface IsolatedAuthoredExperimentOptions extends Omit<IsolatedRunOptions, "latestProgressPath"> {
   outputDirectory: string;
@@ -152,15 +152,7 @@ export async function runAuthoredExperimentIsolated(
   for (const storyId of config.storyIds) {
     const fixture = loadAuthoredFixture(storyId);
     for (const budget of config.budgets) for (const searchSeed of config.searchSeeds) for (const algorithm of config.algorithms) {
-      const request: RunRequest = {
-        fixture,
-        algorithm,
-        searchSeed,
-        storySeed: config.storySeed,
-        budget,
-        ...(config.inkcheckCommand ? { inkcheckCommand: config.inkcheckCommand } : {}),
-        ...(config.resources ? { resources: config.resources } : {}),
-      };
+      const request = authoredRunRequest(config, fixture, algorithm, searchSeed, budget);
       const runId = benchmarkRunId(request);
       const cellPath = join(cellsDirectory, `${runId}.json`);
       const saved = options.resume ? readCompleted(cellPath, runId) : null;

@@ -30,6 +30,14 @@ Cross-tool work units remain distinct. Compare InkCheck states and InkBench choi
 
 The large ladder is there to expose warm-up, crossover, diminishing-return, and resource-bound behavior. It does not make the biological metaphor evidence: the minimal swarm is promoted only through paired family-level results and ablations against random, systematic, and coverage-guided controls.
 
+## Planned marathon wall time
+
+Use a planned wall-time budget—not an emergency time guard—for marathon comparisons. Planned expiry is a completed observation. A memory stop or a high native work safety ceiling reached before the timer is incomplete evidence. Preserve both the primary `wall-ms` grant and native work consumed in every report.
+
+The 20-minute tier validates the protocol and estimates early variance. The 60-minute tier keeps fixture seeds, search seeds, policies, depth settings, memory watermark, and scoring frozen; only duration changes. Generated difficulty-10 families supply planted outcomes, Heresy II supplies large-story transfer evidence without planted-bug claims, and Intercept-20 remains a multi-bug sanity case that may saturate early. See [the preregistered promotion gates](marathon-protocol.md).
+
+InkCheck's scientific arm uses one-core portfolio search, no repro-minimization work, and depth 1,000. A separate product-default arm retains InkCheck's automatic concurrency and other defaults and must not be pooled with the scientific arm. Because per-ending portfolio discovery positions are pass-local, use InkCheck for final yield/complementarity but exclude it from survival curves until per-finding global timing exists.
+
 ## Authored-project tier
 
 Run real stories as a separate ecological-validity analysis. Match story, search seed, runtime seed, transition budget, runtime/artifact version, and algorithm. Report empirical coverage counts, runtime findings, terminal episodes, CPU/wall cost, and paired exclusive locations/edges.
