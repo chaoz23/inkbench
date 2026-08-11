@@ -31,6 +31,8 @@ Every in-process strategy can:
 - choose one legal choice; and
 - receive the resulting observation and coverage delta.
 
+Checkpoint handles have explicit ownership. A searcher calls `retain(snapshotId)` when it places a state in a frontier or colony and `release(snapshotId)` when that reference is consumed or pruned. The controller keeps only the root, active state, and explicitly retained states. Reports separate total runtime snapshot bytes from the subset retained as policy checkpoints.
+
 No strategy receives generator parameters, target choices, oracle definitions, undiscovered graph structure, or a raw Ink save document. Snapshot IDs are opaque handles. InkSwarm's colonies therefore test resource allocation over saved states; they are not a hidden capability denied to baselines.
 
 ## Budget contract
@@ -38,6 +40,27 @@ No strategy receives generator parameters, target choices, oracle definitions, u
 The primary budget unit is a **choice transition**: one call that selects one legal Ink choice and runs until the next stable choice or terminal state. Launching/restoring a checkpoint does not consume transition budget, but its wall and CPU cost is measured. Reports also count launches and completed root-to-terminal episodes.
 
 This contract makes causal work comparable while retaining compute-cost evidence. External tools may use a different native work unit. Adapters must declare that unit and the translation explicitly; missing metrics remain `null`, never zero.
+
+## Resource and worker contract
+
+Resource-bounded runs adapt InkCheck's proven operational pattern without importing InkCheck's search policy:
+
+```text
+matrix parent
+  -> isolated Node worker with declared V8 ceiling
+       -> shared instrumented controller
+            -> strategy-owned checkpoint references
+            -> heap/time guard
+            -> progress and discovery events
+       -> atomic final report
+  -> atomic per-cell + matrix-state datasets
+```
+
+The default memory watermark is 85% of the worker's V8 heap ceiling unless an explicit `maxMemoryMb` is supplied. The controller checks the guard periodically and returns partial evidence with `resource-stopped`, never a false completed-budget claim. Progress events are privacy-minimal and contain counters, coverage totals, discovered bug IDs, and memory accounting—not story prose or raw save states.
+
+Process peak heap/RSS is measured independently from accounted Ink snapshot, policy-checkpoint, and coverage-index payload. Accounted bytes are deterministic UTF-8 payload measures; process memory includes runtime, compiler, object, allocator, and garbage-collector overhead and is therefore the authoritative safety boundary.
+
+Experiment isolation persists the latest progress snapshot and one atomic report per completed cell. Matrix resume skips completed run IDs. Search-frontier continuation within a killed cell is deliberately not claimed until every compared search policy has a versioned exact checkpoint contract.
 
 ## Observation and coverage
 
@@ -75,7 +98,7 @@ Authored reports may compare empirical coverage, runtime findings, terminal epis
 - **Random**: seeded uniform legal choices from root-started episodes.
 - **Systematic**: deterministic depth-first expansion over saved states; a calibration baseline, not branded as InkCheck.
 - **Coverage**: a small priority-frontier explorer using semantic coverage and saturation.
-- **InkSwarm**: minimal colonies, semantic novelty, saturation, deep checkpoints, short local walks, pruning, and a fixed rogue fraction.
+- **InkSwarm**: a deliberately small rule set—save behaviorally novel states, prefer productive/unsaturated colonies, take short locally biased walks, and reserve a fixed rogue fraction. A hard colony cap prunes low-scoring checkpoints for bounded memory. Planted-oracle discoveries never enter its novelty score.
 - **InkCheck adapter**: invokes the actual `inkcheck` CLI and scores its terminal-state evidence. It is intentionally an external adapter so InkBench does not silently reimplement or freeze InkCheck behavior.
 
 ## Known v0.1 limits
@@ -84,5 +107,6 @@ Authored reports may compare empirical coverage, runtime findings, terminal epis
 - In-process strategies use free checkpoint restore in the transition budget. Wall/CPU measurements expose the cost, but a second `root_replay` budget regime is needed for hosts that cannot restore cheaply.
 - State/edge counts are empirical discoveries, not proof-relative percentages unless a fixture is exhaustively enumerated.
 - The InkCheck adapter cannot recover every internal edge metric and currently reports those fields as unavailable.
+- The synchronous InkCheck adapter forwards state, memory, and time limits and reads graceful memory/time stops, but does not yet translate InkCheck's live NDJSON stream or all of its internal memory telemetry.
 - No aggregate leaderboard is authoritative in v0.1. Family curves and paired complementarity are the primary outputs.
 - The first authored corpus has only three consent-safe public projects. It tests transfer, not representativeness of all Ink projects.

@@ -1,7 +1,8 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { writeFileAtomic, writeNdjsonAtomicFromJsonFiles } from "../core/atomic.js";
 import { runBenchmark } from "../core/run.js";
-import { SCHEMA_VERSION, type AlgorithmId, type BudgetSpec, type CoverageCounts, type RunReport } from "../core/types.js";
+import { SCHEMA_VERSION, type AlgorithmId, type BudgetSpec, type CoverageCounts, type ResourceLimits, type RunReport } from "../core/types.js";
 import { getAuthoredCorpusManifest, listAuthoredStories, loadAuthoredFixture } from "./load.js";
 
 export interface AuthoredExperimentConfig {
@@ -12,6 +13,7 @@ export interface AuthoredExperimentConfig {
   budgets: number[];
   storySeed: number;
   inkcheckCommand?: string;
+  resources?: ResourceLimits;
 }
 
 interface CoverageAggregate {
@@ -32,6 +34,7 @@ export interface AuthoredCoverageCell {
   budgetUnit: BudgetSpec["unit"];
   runs: number;
   completed: number;
+  resourceStopped: number;
   meanCoverage: CoverageAggregate | null;
   maxCoverage: CoverageCounts | null;
   meanTransitions: number;
@@ -40,6 +43,8 @@ export interface AuthoredCoverageCell {
   distinctRuntimeFindings: number;
   meanWallMs: number;
   meanCpuMs: number | null;
+  meanPeakHeapBytes: number | null;
+  meanPeakCheckpointBytes: number | null;
 }
 
 export interface AuthoredComplementarityCell {
@@ -68,6 +73,8 @@ export interface AuthoredExperimentSummary {
 export interface AuthoredExperimentResult {
   runs: RunReport[];
   summary: AuthoredExperimentSummary;
+  /** Full authoritative reports persisted by isolated matrix execution. */
+  cellFiles?: string[];
 }
 
 const COVERAGE_KEYS = [
@@ -96,6 +103,7 @@ function coverageCells(runs: RunReport[], config: AuthoredExperimentConfig): Aut
     const completed = matching.filter((run) => run.status === "completed");
     const coverage = completed.flatMap((run) => run.coverage ? [run.coverage] : []);
     const cpu = completed.flatMap((run) => run.timing.cpuMs === null ? [] : [run.timing.cpuMs]);
+    const measured = matching.filter((run) => run.resources !== null);
     const findingKeys = new Set(completed.flatMap((run) => run.runtimeFindings.map((finding) => `${finding.kind}\u0000${finding.value}`)));
     cells.push({
       storyId,
@@ -104,6 +112,7 @@ function coverageCells(runs: RunReport[], config: AuthoredExperimentConfig): Aut
       budgetUnit: algorithm === "inkcheck" ? "inkcheck-states" : "choice-transitions",
       runs: matching.length,
       completed: completed.length,
+      resourceStopped: matching.filter((run) => run.status === "resource-stopped").length,
       meanCoverage: coverage.length > 0 ? aggregateCoverage(coverage, "mean") : null,
       maxCoverage: coverage.length > 0 ? aggregateCoverage(coverage, "max") : null,
       meanTransitions: mean(completed.map((run) => run.counts.transitions)),
@@ -112,6 +121,8 @@ function coverageCells(runs: RunReport[], config: AuthoredExperimentConfig): Aut
       distinctRuntimeFindings: findingKeys.size,
       meanWallMs: mean(completed.map((run) => run.timing.wallMs)),
       meanCpuMs: cpu.length > 0 ? mean(cpu) : null,
+      meanPeakHeapBytes: measured.length > 0 ? mean(measured.map((run) => run.resources!.process.peak.heapUsedBytes)) : null,
+      meanPeakCheckpointBytes: measured.length > 0 ? mean(measured.map((run) => run.resources!.snapshots.peakCheckpointBytes)) : null,
     });
   }
   return cells;
@@ -189,14 +200,17 @@ export function runAuthoredExperiment(config: AuthoredExperimentConfig, onRun?: 
         storySeed: config.storySeed,
         budget,
         ...(config.inkcheckCommand ? { inkcheckCommand: config.inkcheckCommand } : {}),
+        ...(config.resources ? { resources: config.resources } : {}),
       });
       runs.push(report);
       onRun?.(report, runs.length, total);
     }
   }
+  return { runs, summary: summarizeAuthoredRuns(runs, config) };
+}
+
+export function summarizeAuthoredRuns(runs: RunReport[], config: AuthoredExperimentConfig): AuthoredExperimentSummary {
   return {
-    runs,
-    summary: {
       schemaVersion: SCHEMA_VERSION,
       benchmarkTier: "authored-project",
       generatedAt: new Date().toISOString(),
@@ -206,7 +220,6 @@ export function runAuthoredExperiment(config: AuthoredExperimentConfig, onRun?: 
       coverage: coverageCells(runs, config),
       complementarity: complementarityCells(runs, config),
       interpretation: "Authored stories provide ecological-validity coverage and runtime-finding evidence. They have no planted oracle and are excluded from planted-bug probability and survival curves.",
-    },
   };
 }
 
@@ -231,11 +244,11 @@ export function renderAuthoredMarkdown(summary: AuthoredExperimentSummary): stri
     "",
     "## Coverage competence map",
     "",
-    "| Story | Algorithm | Budget | Unit | Completed | Mean locations | Mean edges | Mean semantic states | Runtime-finding runs | Mean wall ms |",
-    "| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| Story | Algorithm | Budget | Unit | Completed | Resource-stopped | Mean locations | Mean edges | Mean semantic states | Runtime-finding runs | Mean wall ms | Peak heap MiB | Peak checkpoints MiB |",
+    "| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
   ];
   for (const cell of summary.coverage) {
-    lines.push(`| ${cell.storyId} | ${cell.algorithm} | ${cell.budget} | ${cell.budgetUnit} | ${cell.completed}/${cell.runs} | ${cell.meanCoverage ? format(cell.meanCoverage.locations) : "n/a"} | ${cell.meanCoverage ? format(cell.meanCoverage.edges) : "n/a"} | ${cell.meanCoverage ? format(cell.meanCoverage.semanticStates) : "n/a"} | ${cell.runtimeFindingRuns} | ${format(cell.meanWallMs)} |`);
+    lines.push(`| ${cell.storyId} | ${cell.algorithm} | ${cell.budget} | ${cell.budgetUnit} | ${cell.completed}/${cell.runs} | ${cell.resourceStopped} | ${cell.meanCoverage ? format(cell.meanCoverage.locations) : "n/a"} | ${cell.meanCoverage ? format(cell.meanCoverage.edges) : "n/a"} | ${cell.meanCoverage ? format(cell.meanCoverage.semanticStates) : "n/a"} | ${cell.runtimeFindingRuns} | ${format(cell.meanWallMs)} | ${cell.meanPeakHeapBytes === null ? "n/a" : format(cell.meanPeakHeapBytes / 2 ** 20)} | ${cell.meanPeakCheckpointBytes === null ? "n/a" : format(cell.meanPeakCheckpointBytes / 2 ** 20)} |`);
   }
   lines.push(
     "",
@@ -265,16 +278,18 @@ function csv(value: unknown): string {
 
 export function writeAuthoredExperiment(outputDirectory: string, result: AuthoredExperimentResult): void {
   mkdirSync(outputDirectory, { recursive: true });
-  writeFileSync(join(outputDirectory, "config.json"), `${JSON.stringify(result.summary.config, null, 2)}\n`, "utf8");
-  writeFileSync(join(outputDirectory, "corpus-manifest.json"), `${JSON.stringify(getAuthoredCorpusManifest(), null, 2)}\n`, "utf8");
-  writeFileSync(join(outputDirectory, "runs.ndjson"), `${result.runs.map((run) => JSON.stringify(run)).join("\n")}\n`, "utf8");
-  const headers = ["runId", "storyId", "algorithm", "searchSeed", "storySeed", "budgetUnit", "budget", "status", "transitions", "episodesCompleted", "runtimeFindings", "wallMs", "cpuMs", "locations", "choices", "edges", "semanticStates", "rawStates"];
+  writeFileAtomic(join(outputDirectory, "config.json"), `${JSON.stringify(result.summary.config, null, 2)}\n`);
+  writeFileAtomic(join(outputDirectory, "corpus-manifest.json"), `${JSON.stringify(getAuthoredCorpusManifest(), null, 2)}\n`);
+  if (result.cellFiles) writeNdjsonAtomicFromJsonFiles(join(outputDirectory, "runs.ndjson"), result.cellFiles);
+  else writeFileAtomic(join(outputDirectory, "runs.ndjson"), `${result.runs.map((run) => JSON.stringify(run)).join("\n")}\n`);
+  const headers = ["runId", "storyId", "algorithm", "searchSeed", "storySeed", "budgetUnit", "budget", "status", "stopReason", "transitions", "episodesCompleted", "runtimeFindings", "wallMs", "cpuMs", "peakHeapBytes", "peakRssBytes", "peakSnapshotBytes", "peakCheckpointBytes", "locations", "choices", "edges", "semanticStates", "rawStates"];
   const rows = result.runs.map((run) => [
     run.runId, run.fixtureId.replace(/^authored-/, ""), run.algorithm, run.searchSeed, run.storySeed, run.budget.unit, run.budget.limit,
-    run.status, run.counts.transitions, run.counts.episodesCompleted, run.runtimeFindings.length, run.timing.wallMs, run.timing.cpuMs ?? "",
+    run.status, run.stopReason, run.counts.transitions, run.counts.episodesCompleted, run.runtimeFindings.length, run.timing.wallMs, run.timing.cpuMs ?? "",
+    run.resources?.process.peak.heapUsedBytes ?? "", run.resources?.process.peak.rssBytes ?? "", run.resources?.snapshots.peakBytes ?? "", run.resources?.snapshots.peakCheckpointBytes ?? "",
     run.coverage?.locations ?? "", run.coverage?.choices ?? "", run.coverage?.edges ?? "", run.coverage?.semanticStates ?? "", run.coverage?.rawStates ?? "",
   ]);
-  writeFileSync(join(outputDirectory, "runs.csv"), `${[headers, ...rows].map((row) => row.map(csv).join(",")).join("\n")}\n`, "utf8");
-  writeFileSync(join(outputDirectory, "summary.json"), `${JSON.stringify(result.summary, null, 2)}\n`, "utf8");
-  writeFileSync(join(outputDirectory, "summary.md"), renderAuthoredMarkdown(result.summary), "utf8");
+  writeFileAtomic(join(outputDirectory, "runs.csv"), `${[headers, ...rows].map((row) => row.map(csv).join(",")).join("\n")}\n`);
+  writeFileAtomic(join(outputDirectory, "summary.json"), `${JSON.stringify(result.summary, null, 2)}\n`);
+  writeFileAtomic(join(outputDirectory, "summary.md"), renderAuthoredMarkdown(result.summary));
 }

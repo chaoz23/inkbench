@@ -1,4 +1,8 @@
 export const SCHEMA_VERSION = 1 as const;
+export const RUN_REPORT_SCHEMA_VERSION = 2 as const;
+export const PROGRESS_SCHEMA_VERSION = 1 as const;
+export const INKBENCH_VERSION = "0.1.0" as const;
+export const RUN_CONTRACT_VERSION = "resource-bounded-v2" as const;
 
 export type BugFamily =
   | "shallow-obvious"
@@ -220,6 +224,72 @@ export interface RunTiming {
   cpuMs: number | null;
 }
 
+export type ResourceStopReason = "budget" | "search-exhausted" | "memory" | "time" | "cancelled" | "error";
+
+export interface ResourceLimits {
+  /** Soft process-heap watermark. Defaults to 85% of V8's heap ceiling. */
+  maxMemoryMb?: number;
+  /** Optional wall-clock guard for the search itself. */
+  maxTimeMs?: number;
+  /** Work cadence for progress snapshots. Defaults to 10,000 transitions. */
+  progressIntervalTransitions?: number;
+  /** Time cadence for progress snapshots. Defaults to one second. */
+  progressIntervalMs?: number;
+}
+
+export interface ProcessMemoryUsage {
+  heapUsedBytes: number;
+  rssBytes: number;
+  externalBytes: number;
+  arrayBuffersBytes: number;
+}
+
+export interface SnapshotMemoryUsage {
+  created: number;
+  released: number;
+  current: number;
+  peak: number;
+  explicitReferences: number;
+  currentBytes: number;
+  peakBytes: number;
+  checkpointBytes: number;
+  peakCheckpointBytes: number;
+}
+
+export interface ResourceUsage {
+  limits: {
+    memoryCapBytes: number;
+    timeCapMs: number | null;
+  };
+  stopReason: ResourceStopReason;
+  process: {
+    peak: ProcessMemoryUsage;
+    final: ProcessMemoryUsage;
+  };
+  snapshots: SnapshotMemoryUsage;
+  coverageIndexBytes: number;
+  peakCoverageIndexBytes: number;
+}
+
+export interface RunProgressEvent {
+  schemaVersion: typeof PROGRESS_SCHEMA_VERSION;
+  sequence: number;
+  type: "run_start" | "progress" | "discovery" | "run_end";
+  runId: string;
+  fixtureId: string;
+  algorithm: AlgorithmId;
+  elapsedMs: number;
+  transitions: number;
+  transitionBudget: number;
+  budgetFraction: number;
+  coverage: CoverageCounts | null;
+  discoveredBugIds: string[];
+  runtimeFindings: number;
+  processMemory: ProcessMemoryUsage;
+  snapshotMemory: SnapshotMemoryUsage | null;
+  stopReason: ResourceStopReason | null;
+}
+
 export interface RunCounts {
   transitions: number;
   launches: number;
@@ -228,7 +298,7 @@ export interface RunCounts {
 }
 
 export interface RunReport {
-  schemaVersion: typeof SCHEMA_VERSION;
+  schemaVersion: typeof RUN_REPORT_SCHEMA_VERSION;
   runId: string;
   fixtureId: string;
   fixtureGeneratorVersion: string;
@@ -250,13 +320,18 @@ export interface RunReport {
   runtimeFindings: RuntimeFinding[];
   plantedBugIds: string[];
   timing: RunTiming;
+  /** Why work ended, independent of whether a strategy exposes resource telemetry. */
+  stopReason: ResourceStopReason;
+  resources: ResourceUsage | null;
   runtime: {
+    harnessVersion: string;
+    runContractVersion: string;
     engine: string;
     engineVersion: string;
     node: string;
     platform: string;
   };
-  status: "completed" | "adapter-unavailable" | "compile-error" | "runtime-error";
+  status: "completed" | "resource-stopped" | "adapter-unavailable" | "compile-error" | "runtime-error";
   error: string | null;
   notes: string[];
 }
@@ -268,6 +343,8 @@ export interface RunRequest {
   storySeed: number;
   budget: number;
   inkcheckCommand?: string;
+  resources?: ResourceLimits;
+  onProgress?: (event: RunProgressEvent) => void;
 }
 
 export interface ExperimentConfig {
@@ -280,6 +357,7 @@ export interface ExperimentConfig {
   difficulty: number;
   storySeed: number;
   inkcheckCommand?: string;
+  resources?: ResourceLimits;
 }
 
 export interface ProbabilityCell {
@@ -314,6 +392,24 @@ export interface ComplementarityCell {
   unionDiscoveries: number;
 }
 
+export interface ResourceCell {
+  family: BenchmarkFamily;
+  algorithm: AlgorithmId;
+  budget: number;
+  runs: number;
+  completed: number;
+  resourceStopped: number;
+  memoryStopped: number;
+  timeStopped: number;
+  discoveriesBeforeStop: number;
+  meanTransitions: number;
+  meanWallMs: number;
+  meanPeakHeapBytes: number | null;
+  meanPeakRssBytes: number | null;
+  meanPeakSnapshotBytes: number | null;
+  meanPeakCheckpointBytes: number | null;
+}
+
 export interface ExperimentSummary {
   schemaVersion: typeof SCHEMA_VERSION;
   generatedAt: string;
@@ -323,4 +419,5 @@ export interface ExperimentSummary {
   probability: ProbabilityCell[];
   survival: SurvivalPoint[];
   complementarity: ComplementarityCell[];
+  resources: ResourceCell[];
 }

@@ -6,6 +6,8 @@ It does not exist to make InkSwarm win. It exists to discover whether InkSwarm�
 
 Version 0.1.0 is a working research vertical slice: it generates Ink fixtures, runs a pinned and licensed three-project authored corpus, enforces transition budgets, runs four internal strategies, invokes the real InkCheck CLI when configured, records exact repro paths, and emits raw datasets plus competence, survival, coverage, and complementarity summaries.
 
+The current unreleased work adds the resource-bounded execution layer needed for mature InkSwarm experiments: explicit checkpoint ownership, heap/time guards, isolated workers, streamed progress, atomic partial evidence, and resumable experiment matrices.
+
 ## What ships in 0.1.0
 
 - Deterministic procedural generators for all eleven initial bug families.
@@ -93,9 +95,39 @@ InkBench owns the story and measurement. Internal strategies receive the same ob
 - semantic coverage deltas; and
 - opaque handles for checkpoints they have already reached.
 
-Every strategy may restore any checkpoint it observed. InkSwarm's saved colonies are therefore an allocation policy, not privileged access. Generator parameters, planted-oracle definitions, undiscovered graph structure, and raw save JSON remain hidden.
+Every strategy may explicitly retain and later restore any checkpoint it observed, then release it when no longer needed. Retained Ink save states are measured and charged to that strategy. Root and the active state are runtime infrastructure; the controller no longer keeps every historical transition forever. InkSwarm's saved colonies are therefore an allocation policy, not privileged access. Generator parameters, planted-oracle definitions, undiscovered graph structure, and raw save JSON remain hidden.
 
 The primary in-process budget is one **choice transition**. Checkpoint restore is not a transition, but its CPU and wall cost is measured. See [the architecture decision record](docs/architecture.md) for the full boundary and limitations.
+
+## Resource-bounded and mature runs
+
+Long runs should use isolated workers so one strategy cannot take down the matrix process:
+
+```sh
+inkbench run \
+  --family compound-needle \
+  --algorithm swarm \
+  --difficulty 3 \
+  --budget 1000000 \
+  --isolated \
+  --max-memory-mb 1536 \
+  --max-time-seconds 1800 \
+  --progress ndjson \
+  --json
+```
+
+The worker stops cleanly before its heap watermark and returns `status: "resource-stopped"` with partial coverage, findings, witnesses, peak heap/RSS, and retained-checkpoint evidence. `--worker-heap-mb` optionally sets the child V8 ceiling; otherwise InkBench places an explicit memory guard below a derived worker ceiling.
+
+The deliberately large mature matrices use held-out seeds, 30 paired repetitions, logarithmic budgets from 1,000 through 10,000,000 native work units, a 1,536 MiB heap guard, and a 30-minute per-cell time guard:
+
+```sh
+inkbench experiment --preset mature --out artifacts/mature --resume
+inkbench corpus experiment --preset mature --out artifacts/corpus-mature --resume
+```
+
+`mature` implies isolated execution. Each cell writes an atomic `cells/<run-id>.json` and a replace-in-place `progress/<run-id>.json`; `matrix-state.json` and the durable append-only `runs.partial.ndjson` journal survive interruption. Per-cell files are authoritative if the journal's last line is interrupted. `--resume` skips exact completed run IDs. It does **not** claim to resume a search frontier inside an interrupted cell; exact cross-process policy continuation remains future work.
+
+Resource-stopped cells remain in raw/resource summaries but are excluded from fixed-transition discovery probability because they did not receive the full requested work. Compare cross-tool runs through wall time, CPU, peak memory, and findings while retaining each tool's native budget unit.
 
 ## Algorithms
 
@@ -117,7 +149,9 @@ inkbench run \
   --budget 10000
 ```
 
-InkCheck's native “states explored” unit is close to, but not identical with, InkBench's choice-transition unit. Reports preserve that distinction and leave unavailable edge/state metrics as `null`. Do not erase the unit label in comparisons.
+InkCheck's current local CLI default is **10,000,000 states** (with a 100,000,000 ceiling); small exhaustive stories still exit early. That is an important calibration point: InkBench's 100/500-transition cells are cold-start checks, not evidence about mature search behavior. The adapter always passes the matrix's explicit `--max-states`, memory, and time limits, so it never relies silently on InkCheck's defaults.
+
+InkCheck's native “states explored” unit is close to, but not identical with, InkBench's choice-transition unit. Reports preserve that distinction and leave unavailable edge/state metrics as `null`. Do not erase the unit label in comparisons. InkCheck exposes its own internal progress stream and detailed memory telemetry; the current synchronous adapter consumes its final report and does not yet translate that stream or every telemetry field into InkBench events.
 
 ## Experiment outputs
 
@@ -136,6 +170,8 @@ artifacts/quick/
 ```
 
 `runs.ndjson` is the authoritative cell-level dataset. `summary.json` includes probability and Kaplan–Meier-style survival points. `summary.md` renders family competence and complementarity tables. Timings naturally vary; choices, discoveries, budgets, coverage counts, and witnesses are deterministic for pinned versions and seeds.
+
+Run reports use schema v2 and include a `resources` section. Versioned progress events and resumable matrix-state schemas live beside the other contracts in [`schemas/`](schemas).
 
 The versioned JSON schemas live in [`schemas/`](schemas), and the contribution path for another strategy or external tool is documented in [adding a searcher](docs/adding-a-searcher.md).
 
@@ -163,6 +199,7 @@ The authored summary reports empirical coverage and paired exclusive locations/e
 - Treat undiscovered runs as right-censored, not as infinite discovery times.
 - Call empirical counts “states observed,” not percentage coverage, unless the reachable denominator is proven.
 - Separate transition efficiency from wall/CPU efficiency.
+- Treat memory/time-stopped cells as partial resource evidence, not completed fixed-budget misses.
 - Freeze held-out fixture seeds before tuning an algorithm.
 - Keep failed/unavailable cells in the raw dataset.
 - Never convert authored-project coverage into planted-bug yield or survival data.
@@ -172,6 +209,8 @@ The v0.1 generated-fixture oracle is an explicit global set only when the plante
 The checked [v0.1 development matrix](docs/v0.1-development-results.md) is deliberately candid: the current minimal swarm produced no exclusive discovery in 792 small development cells and was weaker than the simple controls in several families. It is a forcing function for the next experiments, not a promotional benchmark result.
 
 The separate [v0.1 authored-project smoke](docs/v0.1-authored-smoke-results.md) verifies all three real stories across the four internal strategies and records initial coverage complementarity, with an explicit one-seed/no-claims caveat.
+
+The [v0.2 resource-bounded smoke](docs/v0.2-resource-smoke-results.md) verifies guarded isolated workers, explicit checkpoint cost, partial memory-stop evidence, and matrix resume on one logarithmic-budget cell. It is infrastructure evidence, not a leaderboard.
 
 ## Why InkBench and InkSwarm are separate
 

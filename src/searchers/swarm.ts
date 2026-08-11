@@ -42,12 +42,17 @@ export const swarmSearcher: Searcher = {
     let deepest = root.depth;
     let pruned = 0;
     let rogueLaunches = 0;
+    let nextPruneAt = 64;
 
     const addColony = (observation: Observation, novelty: number, transition: number): Colony | null => {
       if (observation.terminal || observation.choices.length === 0) return null;
       const existing = colonies.get(observation.semanticKey);
       if (existing) {
         if (novelty > existing.novelty || observation.depth > existing.observation.depth) {
+          if (existing.snapshotId !== observation.snapshotId) {
+            controller.retain(observation.snapshotId);
+            controller.release(existing.snapshotId);
+          }
           existing.snapshotId = observation.snapshotId;
           existing.observation = observation;
           existing.novelty = Math.max(existing.novelty, novelty);
@@ -64,6 +69,7 @@ export const swarmSearcher: Searcher = {
         choiceAttempts: observation.choices.map(() => 0),
         behavioralKey: behaviorKey(observation),
       };
+      controller.retain(observation.snapshotId);
       colonies.set(observation.semanticKey, colony);
       return colony;
     };
@@ -82,7 +88,6 @@ export const swarmSearcher: Searcher = {
         novelty += Math.min(4, (result.after.depth - deepest) * 0.5);
         deepest = result.after.depth;
       }
-      if (result.newlyDiscoveredBugIds.length > 0) novelty += 100;
       return novelty;
     };
 
@@ -139,6 +144,7 @@ export const swarmSearcher: Searcher = {
         .sort((left, right) => colonyScore(left[1]) - colonyScore(right[1]));
       const remove = colonies.size - MAX_COLONIES;
       for (const [key] of ranked.slice(0, remove)) {
+        controller.release(colonies.get(key)!.snapshotId);
         colonies.delete(key);
         pruned += 1;
       }
@@ -162,7 +168,10 @@ export const swarmSearcher: Searcher = {
         observation = result.after;
         if (child) colony = child;
       }
-      if (controller.transitions % 64 === 0) prune();
+      if (controller.transitions >= nextPruneAt) {
+        prune();
+        nextPruneAt = controller.transitions + 64;
+      }
     }
     return {
       notes: [

@@ -38,6 +38,7 @@ export const coverageSearcher: Searcher = {
         const key = `${observation.semanticKey}|${choice.id}`;
         if (queuedEdges.has(key)) continue;
         queuedEdges.add(key);
+        controller.retain(observation.snapshotId);
         frontier.push({
           snapshotId: observation.snapshotId,
           semanticKey: observation.semanticKey,
@@ -75,6 +76,7 @@ export const coverageSearcher: Searcher = {
       stateLaunches.set(candidate.semanticKey, (stateLaunches.get(candidate.semanticKey) ?? 0) + 1);
       choiceAttempts.set(candidate.choiceId, (choiceAttempts.get(candidate.choiceId) ?? 0) + 1);
       controller.launch(candidate.snapshotId);
+      controller.release(candidate.snapshotId);
       const result = controller.step(candidate.choiceIndex);
       enqueue(result.after, weightedYield(result.coverageDelta));
     }

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Add explicit reference-counted checkpoint ownership so strategies pay for the Ink states they retain instead of the harness retaining every transition forever.
+- Add InkCheck-inspired heap/time guards, process and checkpoint memory accounting, graceful resource-stopped reports, and versioned NDJSON progress events.
+- Add isolated worker execution with configurable V8 heap ceilings and hard-timeout containment.
+- Atomically persist per-cell reports, latest partial progress, matrix state, and final datasets; completed experiment cells can be resumed without replay.
+- Add deliberately large `mature` generated and authored presets with 30 paired repetitions and logarithmic budgets through ten million native work units, matching InkCheck's current local default budget.
+- Forward matrix memory/time guards to the InkCheck CLI and preserve its graceful memory/time stop reason even when adapter-specific telemetry is unavailable.
+- Keep planted-oracle discoveries out of InkSwarm's novelty score; the minimal policy allocates only from shared runtime/coverage observations.
+- Add resource-envelope tables and peak heap/RSS/snapshot/checkpoint columns without pooling partial cells into fixed-budget discovery probability.
+
 ## 0.1.0 - 2026-08-11
 
 - Establish the neutral InkBench experiment and searcher contracts.

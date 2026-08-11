@@ -1,4 +1,4 @@
-import { SCHEMA_VERSION, type AlgorithmId, type ComplementarityCell, type ExperimentConfig, type ExperimentSummary, type ProbabilityCell, type RunReport, type SurvivalPoint } from "../core/types.js";
+import { SCHEMA_VERSION, type AlgorithmId, type ComplementarityCell, type ExperimentConfig, type ExperimentSummary, type ProbabilityCell, type ResourceCell, type RunReport, type SurvivalPoint } from "../core/types.js";
 
 function median(values: number[]): number | null {
   if (values.length === 0) return null;
@@ -108,6 +108,37 @@ function complementarityCells(runs: RunReport[], config: ExperimentConfig): Comp
   return results;
 }
 
+function resourceCells(runs: RunReport[]): ResourceCell[] {
+  const groups = new Map<string, RunReport[]>();
+  for (const run of runs) {
+    const values = groups.get(groupKey(run)) ?? [];
+    values.push(run);
+    groups.set(groupKey(run), values);
+  }
+  return [...groups.values()].map((values) => {
+    const first = values[0]!;
+    const measured = values.filter((run) => run.resources !== null);
+    const optionalMean = (select: (run: RunReport) => number): number | null => measured.length === 0 ? null : mean(measured.map(select));
+    return {
+      family: first.family,
+      algorithm: first.algorithm,
+      budget: first.budget.limit,
+      runs: values.length,
+      completed: values.filter((run) => run.status === "completed").length,
+      resourceStopped: values.filter((run) => run.status === "resource-stopped").length,
+      memoryStopped: values.filter((run) => run.stopReason === "memory").length,
+      timeStopped: values.filter((run) => run.stopReason === "time").length,
+      discoveriesBeforeStop: values.filter((run) => run.discoveredBugs.length > 0).length,
+      meanTransitions: mean(values.map((run) => run.counts.transitions)),
+      meanWallMs: mean(values.map((run) => run.timing.wallMs)),
+      meanPeakHeapBytes: optionalMean((run) => run.resources!.process.peak.heapUsedBytes),
+      meanPeakRssBytes: optionalMean((run) => run.resources!.process.peak.rssBytes),
+      meanPeakSnapshotBytes: optionalMean((run) => run.resources!.snapshots.peakBytes),
+      meanPeakCheckpointBytes: optionalMean((run) => run.resources!.snapshots.peakCheckpointBytes),
+    };
+  }).sort((left, right) => left.budget - right.budget || left.family.localeCompare(right.family) || left.algorithm.localeCompare(right.algorithm));
+}
+
 export function summarizeRuns(runs: RunReport[], config: ExperimentConfig, generatedAt = new Date().toISOString()): ExperimentSummary {
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -118,6 +149,7 @@ export function summarizeRuns(runs: RunReport[], config: ExperimentConfig, gener
     probability: probabilityCells(runs),
     survival: survivalCells(runs),
     complementarity: complementarityCells(runs, config),
+    resources: resourceCells(runs),
   };
 }
 
@@ -158,6 +190,20 @@ export function renderMarkdown(summary: ExperimentSummary): string {
     lines.push("");
   }
   lines.push(
+    "## Resource envelope",
+    "",
+    "Resource-stopped cells are excluded from fixed-budget discovery probabilities above but retained here as partial evidence. Peak snapshot bytes include Ink save JSON plus observations; checkpoint bytes are the subset explicitly retained by a search policy.",
+    "",
+    "| Family | Algorithm | Budget | Completed | Resource-stopped | Mean transitions | Mean peak heap MiB | Mean peak checkpoints MiB |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+  );
+  for (const cell of summary.resources) {
+    const heap = cell.meanPeakHeapBytes === null ? "n/a" : (cell.meanPeakHeapBytes / 2 ** 20).toFixed(1);
+    const checkpoints = cell.meanPeakCheckpointBytes === null ? "n/a" : (cell.meanPeakCheckpointBytes / 2 ** 20).toFixed(1);
+    lines.push(`| ${cell.family} | ${cell.algorithm} | ${cell.budget} | ${cell.completed}/${cell.runs} | ${cell.resourceStopped} | ${cell.meanTransitions.toFixed(1)} | ${heap} | ${checkpoints} |`);
+  }
+  lines.push(
+    "",
     "## Survival data",
     "",
     "Kaplan–Meier-style right-censored points are stored in `summary.json` under `survival`. Plot survival as the fraction of planted bugs still undiscovered; lower and earlier is better.",

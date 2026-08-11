@@ -6,14 +6,18 @@ Implement `Searcher` from `src/searchers/types.ts`, add the ID to the `InProcess
 
 The strategy receives only an `InstrumentedController` and its search seed. Its allowed operations are:
 
-1. `launch()` at the root or `launch(snapshotId)` at a previously observed checkpoint;
+1. `launch()` at the root or `launch(snapshotId)` at a previously retained checkpoint;
 2. read the returned `Observation`;
-3. call `step(choiceIndex)` for one legal choice; and
-4. stop when `controller.exhausted` is true or no useful work remains.
+3. call `retain(snapshotId)` before storing a state in a frontier, queue, or colony;
+4. call `release(snapshotId)` when that stored reference is consumed or pruned;
+5. call `step(choiceIndex)` for one legal choice; and
+6. stop when `controller.exhausted` is true or no useful work remains.
+
+The root and current state are runtime infrastructure. Every other restorable Ink state is charged to the strategy and appears in the snapshot/checkpoint resource report.
 
 Do not import fixture generators or read `controller.fixture.manifest` from strategy code. The controller exposes that field to orchestration and tests, not as strategy input. A future conformance wrapper will harden this boundary; code review and the searcher test suite enforce it in v0.1.
 
-Every strategy must have a versioned policy ID and deterministic behavior for a fixed fixture, search seed, story seed, and dependency lockfile. Add budget, determinism, and adversarial-family tests.
+Every strategy must have a versioned policy ID and deterministic behavior for a fixed fixture, search seed, story seed, and dependency lockfile. Add budget, determinism, checkpoint-lifecycle, resource-stop, and adversarial-family tests.
 
 ## External adapter
 

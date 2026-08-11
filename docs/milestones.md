@@ -13,10 +13,13 @@
 
 ## v0.2.0 — measurement validity
 
+- Resource-bounded isolated workers with heap/time guards, streamed progress, partial evidence, and completed-cell matrix resume.
+- Explicit checkpoint ownership and separate process/snapshot/checkpoint/coverage memory accounting.
+- Cold-start versus mature logarithmic-budget regimes through 10 million native work units with 30 paired held-out repetitions.
 - Official `inklecate` compile/replay validation and compiler-version provenance.
 - Multiple bug/oracle classes, multi-bug fixtures, and exhaustive small-fixture ground truth.
 - Root-replay and checkpoint-restore budget regimes.
-- Peak RSS sampling and external-process CPU accounting.
+- External-process CPU accounting beyond current worker-local CPU and parent-observed wall time.
 - Frozen training/validation/blind-evaluation seed partitions and preregistration files.
 - Statistical intervals and paired significance/effect-size reporting.
 

@@ -27,7 +27,10 @@
     "smoke": "node dist/cli.js run --family shallow-obvious --algorithm random --fixture-seed 1 --search-seed 1 --budget 50 --json",
     "experiment:quick": "node dist/cli.js experiment --preset quick --out artifacts/quick",
     "experiment:development": "node dist/cli.js experiment --preset development --out artifacts/development",
-    "corpus:smoke": "node dist/cli.js corpus experiment --preset smoke --out artifacts/corpus-smoke"
+    "experiment:resource-smoke": "node dist/cli.js experiment --config examples/resource-smoke.json --out artifacts/resource-smoke --isolated --resume",
+    "experiment:mature": "node dist/cli.js experiment --preset mature --out artifacts/mature --resume",
+    "corpus:smoke": "node dist/cli.js corpus experiment --preset smoke --out artifacts/corpus-smoke",
+    "corpus:mature": "node dist/cli.js corpus experiment --preset mature --out artifacts/corpus-mature --resume"
   },
   "keywords": [
     "ink",

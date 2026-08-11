@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
-import { BUG_FAMILIES, SCHEMA_VERSION, type AlgorithmId, type BugFamily, type ExperimentConfig } from "./core/types.js";
+import { BUG_FAMILIES, SCHEMA_VERSION, type AlgorithmId, type BugFamily, type ExperimentConfig, type ResourceLimits, type RunProgressEvent } from "./core/types.js";
 import { generateFixture } from "./fixtures/generate.js";
 import { runBenchmark } from "./core/run.js";
+import { runBenchmarkIsolated } from "./core/isolated.js";
+import { writeJsonAtomic } from "./core/atomic.js";
 import { runExperiment, writeExperiment } from "./experiments/run.js";
+import { runExperimentIsolated } from "./experiments/isolated.js";
 import { listAuthoredStories, loadAuthoredFixture } from "./corpus/load.js";
 import { runAuthoredExperiment, writeAuthoredExperiment, type AuthoredExperimentConfig } from "./corpus/experiment.js";
+import { runAuthoredExperimentIsolated } from "./corpus/isolated.js";
 
 const ALGORITHMS: readonly AlgorithmId[] = ["random", "systematic", "coverage", "swarm", "inkcheck"];
 
@@ -20,15 +24,23 @@ Usage:
   inkbench run --family <name> --algorithm random|systematic|coverage|swarm|inkcheck
                [--fixture-seed N] [--search-seed N] [--story-seed N]
                [--difficulty N] [--budget N] [--inkcheck-command PATH] [--json]
-  inkbench experiment [--preset quick|development] [--config FILE] [--out DIR]
-                      [--inkcheck-command PATH]
+               [--isolated] [--max-memory-mb N] [--max-time-seconds N]
+               [--worker-heap-mb N] [--progress ndjson|off] [--progress-file FILE]
+  inkbench experiment [--preset quick|development|mature] [--config FILE] [--out DIR]
+                      [--inkcheck-command PATH] [--isolated] [--resume]
+                      [--max-memory-mb N] [--max-time-seconds N]
+                      [--worker-heap-mb N] [--progress ndjson|off]
   inkbench corpus list
   inkbench corpus verify
   inkbench corpus run --story <id> --algorithm random|systematic|coverage|swarm|inkcheck
                       [--search-seed N] [--story-seed N] [--budget N]
-                      [--inkcheck-command PATH] [--json]
-  inkbench corpus experiment [--preset smoke|development] [--config FILE]
-                             [--out DIR] [--inkcheck-command PATH]
+                      [--inkcheck-command PATH] [--json] [--isolated]
+                      [--max-memory-mb N] [--max-time-seconds N]
+                      [--worker-heap-mb N] [--progress ndjson|off] [--progress-file FILE]
+  inkbench corpus experiment [--preset smoke|development|mature] [--config FILE]
+                             [--out DIR] [--inkcheck-command PATH] [--isolated] [--resume]
+                             [--max-memory-mb N] [--max-time-seconds N]
+                             [--worker-heap-mb N] [--progress ndjson|off]
 
 The primary in-process budget unit is one legal Ink choice transition. The
 InkCheck adapter retains InkCheck's native state unit and labels it explicitly.`);
@@ -49,6 +61,38 @@ function integer(args: string[], name: string, fallback: number, min = 1): numbe
   const parsed = Number(raw);
   if (!Number.isSafeInteger(parsed) || parsed < min) usage(`${name} must be an integer >= ${min}`);
   return parsed;
+}
+
+function optionalInteger(args: string[], name: string, min = 1): number | undefined {
+  const raw = value(args, name);
+  if (raw === undefined) return undefined;
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < min) usage(`${name} must be an integer >= ${min}`);
+  return parsed;
+}
+
+function resourcesFromArgs(args: string[], base?: ResourceLimits): ResourceLimits | undefined {
+  const maxMemoryMb = optionalInteger(args, "--max-memory-mb");
+  const maxTimeSeconds = optionalInteger(args, "--max-time-seconds");
+  const progressIntervalTransitions = optionalInteger(args, "--progress-interval");
+  const merged: ResourceLimits = {
+    ...(base ?? {}),
+    ...(maxMemoryMb === undefined ? {} : { maxMemoryMb }),
+    ...(maxTimeSeconds === undefined ? {} : { maxTimeMs: maxTimeSeconds * 1_000 }),
+    ...(progressIntervalTransitions === undefined ? {} : { progressIntervalTransitions }),
+  };
+  return Object.keys(merged).length === 0 ? undefined : merged;
+}
+
+function progressWriter(args: string[]): ((event: RunProgressEvent) => void) | undefined {
+  const mode = value(args, "--progress") ?? "off";
+  if (mode !== "off" && mode !== "ndjson") usage("--progress must be ndjson or off");
+  const path = value(args, "--progress-file");
+  if (mode === "off" && !path) return undefined;
+  return (event) => {
+    if (mode === "ndjson") process.stderr.write(`${JSON.stringify(event)}\n`);
+    if (path) writeJsonAtomic(resolve(path), event);
+  };
 }
 
 function familyArg(args: string[]): BugFamily {
@@ -89,7 +133,29 @@ function preset(name: string): ExperimentConfig {
       storySeed: 1,
     };
   }
+  if (name === "mature") {
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      families: ["deep-corridor", "rare-prefix", "combination-lock", "novelty-honeypot", "false-novelty", "delayed-consequence", "order-dependent", "compound-needle"],
+      algorithms: ["random", "systematic", "coverage", "swarm"],
+      fixtureSeeds: [101, 102, 103, 104, 105, 106],
+      searchSeeds: [101, 102, 103, 104, 105],
+      budgets: [1_000, 3_000, 10_000, 30_000, 100_000, 300_000, 1_000_000, 3_000_000, 10_000_000],
+      difficulty: 3,
+      storySeed: 1,
+      resources: { maxMemoryMb: 1_536, maxTimeMs: 1_800_000, progressIntervalTransitions: 10_000 },
+    };
+  }
   usage(`unknown preset ${name}`);
+}
+
+function validateResources(resources: ResourceLimits | undefined): void {
+  if (resources === undefined) return;
+  if (resources === null || typeof resources !== "object") usage("resources must be an object");
+  for (const [name, item] of Object.entries(resources)) {
+    if (!["maxMemoryMb", "maxTimeMs", "progressIntervalTransitions", "progressIntervalMs"].includes(name)) usage(`unknown resources field ${name}`);
+    if (!Number.isSafeInteger(item) || (item as number) < 1) usage(`resources.${name} must be a positive integer`);
+  }
 }
 
 function validateConfig(input: unknown): ExperimentConfig {
@@ -103,6 +169,7 @@ function validateConfig(input: unknown): ExperimentConfig {
   }
   if (!Number.isSafeInteger(record.difficulty) || (record.difficulty ?? 0) < 1 || (record.difficulty ?? 0) > 10) usage("difficulty must be 1..10");
   if (!Number.isSafeInteger(record.storySeed) || (record.storySeed ?? 0) < 1) usage("storySeed must be a positive integer");
+  validateResources(record.resources);
   return record as ExperimentConfig;
 }
 
@@ -124,11 +191,27 @@ function commandGenerate(args: string[]): void {
   console.log(`manifest  ${manifestPath}`);
 }
 
-function commandRun(args: string[]): void {
+async function executeRun(args: string[], request: Parameters<typeof runBenchmark>[0]) {
+  const resources = resourcesFromArgs(args, request.resources);
+  const onProgress = progressWriter(args);
+  const configured = {
+    ...request,
+    ...(resources ? { resources } : {}),
+    ...(onProgress ? { onProgress } : {}),
+  };
+  if (!args.includes("--isolated")) return runBenchmark(configured);
+  const heapLimitMb = optionalInteger(args, "--worker-heap-mb");
+  return runBenchmarkIsolated(configured, {
+    ...(heapLimitMb === undefined ? {} : { heapLimitMb }),
+    ...(onProgress ? { onProgress } : {}),
+  });
+}
+
+async function commandRun(args: string[]): Promise<void> {
   const family = familyArg(args);
   const fixture = generateFixture(family, integer(args, "--fixture-seed", 1), integer(args, "--difficulty", 1));
   const inkcheckCommand = value(args, "--inkcheck-command");
-  const report = runBenchmark({
+  const report = await executeRun(args, {
     fixture,
     algorithm: algorithmArg(args),
     searchSeed: integer(args, "--search-seed", 1, 0),
@@ -149,18 +232,35 @@ function commandRun(args: string[]): void {
   if (report.status !== "completed") process.exitCode = 1;
 }
 
-function commandExperiment(args: string[]): void {
+async function commandExperiment(args: string[]): Promise<void> {
   const configPath = value(args, "--config");
+  const presetName = value(args, "--preset") ?? "quick";
   let config = configPath
     ? validateConfig(JSON.parse(readFileSync(resolve(configPath), "utf8")) as unknown)
-    : preset(value(args, "--preset") ?? "quick");
+    : preset(presetName);
   const inkcheckCommand = value(args, "--inkcheck-command");
   if (inkcheckCommand) config = { ...config, inkcheckCommand };
+  const resources = resourcesFromArgs(args, config.resources);
+  if (resources) config = { ...config, resources };
   const output = resolve(value(args, "--out") ?? "artifacts/experiment");
-  const result = runExperiment(config, (report, completed, total) => {
+  const isolated = args.includes("--isolated") || (!configPath && presetName === "mature");
+  if (args.includes("--resume") && !isolated) usage("--resume requires --isolated or the mature preset");
+  const onRun = (report: Awaited<ReturnType<typeof executeRun>>, completed: number, total: number, resumed = false) => {
     const found = report.discoveredBugs.length > 0 ? "found" : "miss";
-    console.error(`[${completed}/${total}] ${report.family} ${report.algorithm} budget=${report.budget.limit} ${report.status}/${found}`);
-  });
+    console.error(`[${completed}/${total}] ${report.family} ${report.algorithm} budget=${report.budget.limit} ${report.status}/${found}${resumed ? " resumed" : ""}`);
+  };
+  const progress = progressWriter(args);
+  const heapLimitMb = optionalInteger(args, "--worker-heap-mb");
+  const result = isolated
+    ? await runExperimentIsolated(config, {
+      outputDirectory: output,
+      resume: args.includes("--resume"),
+      retainCoverageItems: false,
+      ...(heapLimitMb === undefined ? {} : { heapLimitMb }),
+      ...(progress ? { onProgress: progress } : {}),
+      onRun,
+    })
+    : runExperiment(config, (report, completed, total) => onRun(report, completed, total));
   writeExperiment(output, result);
   console.log(`wrote ${result.runs.length} raw runs and summaries to ${output}`);
 }
@@ -194,6 +294,17 @@ function authoredPreset(name: string): AuthoredExperimentConfig {
       storySeed: 1,
     };
   }
+  if (name === "mature") {
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      storyIds,
+      algorithms: ["random", "systematic", "coverage", "swarm"],
+      searchSeeds: Array.from({ length: 30 }, (_, index) => 101 + index),
+      budgets: [1_000, 3_000, 10_000, 30_000, 100_000, 300_000, 1_000_000, 3_000_000, 10_000_000],
+      storySeed: 1,
+      resources: { maxMemoryMb: 1_536, maxTimeMs: 1_800_000, progressIntervalTransitions: 10_000 },
+    };
+  }
   usage(`unknown corpus preset ${name}`);
 }
 
@@ -208,10 +319,11 @@ function validateAuthoredConfig(input: unknown): AuthoredExperimentConfig {
     if (!Array.isArray(values) || values.length === 0 || !values.every((item) => Number.isSafeInteger(item) && item >= (name === "searchSeeds" ? 0 : 1))) usage(`${name} contains an invalid integer`);
   }
   if (!Number.isSafeInteger(record.storySeed) || (record.storySeed ?? 0) < 1) usage("storySeed must be a positive integer");
+  validateResources(record.resources);
   return record as AuthoredExperimentConfig;
 }
 
-function commandCorpus(args: string[]): void {
+async function commandCorpus(args: string[]): Promise<void> {
   const [action, ...actionArgs] = args;
   if (action === "list") {
     for (const story of listAuthoredStories()) {
@@ -230,7 +342,7 @@ function commandCorpus(args: string[]): void {
     const storyId = storyArg(actionArgs);
     const fixture = loadAuthoredFixture(storyId);
     const inkcheckCommand = value(actionArgs, "--inkcheck-command");
-    const report = runBenchmark({
+    const report = await executeRun(actionArgs, {
       fixture,
       algorithm: algorithmArg(actionArgs),
       searchSeed: integer(actionArgs, "--search-seed", 1, 0),
@@ -253,15 +365,32 @@ function commandCorpus(args: string[]): void {
   }
   if (action === "experiment") {
     const configPath = value(actionArgs, "--config");
+    const presetName = value(actionArgs, "--preset") ?? "smoke";
     let config = configPath
       ? validateAuthoredConfig(JSON.parse(readFileSync(resolve(configPath), "utf8")) as unknown)
-      : authoredPreset(value(actionArgs, "--preset") ?? "smoke");
+      : authoredPreset(presetName);
     const inkcheckCommand = value(actionArgs, "--inkcheck-command");
     if (inkcheckCommand) config = { ...config, inkcheckCommand };
+    const resources = resourcesFromArgs(actionArgs, config.resources);
+    if (resources) config = { ...config, resources };
     const output = resolve(value(actionArgs, "--out") ?? "artifacts/corpus");
-    const result = runAuthoredExperiment(config, (report, completed, total) => {
-      console.error(`[${completed}/${total}] ${report.fixtureId} ${report.algorithm} budget=${report.budget.limit} ${report.status}`);
-    });
+    const isolated = actionArgs.includes("--isolated") || (!configPath && presetName === "mature");
+    if (actionArgs.includes("--resume") && !isolated) usage("--resume requires --isolated or the mature preset");
+    const onRun = (report: Awaited<ReturnType<typeof executeRun>>, completed: number, total: number, resumed = false) => {
+      console.error(`[${completed}/${total}] ${report.fixtureId} ${report.algorithm} budget=${report.budget.limit} ${report.status}${resumed ? " resumed" : ""}`);
+    };
+    const progress = progressWriter(actionArgs);
+    const heapLimitMb = optionalInteger(actionArgs, "--worker-heap-mb");
+    const result = isolated
+      ? await runAuthoredExperimentIsolated(config, {
+        outputDirectory: output,
+        resume: actionArgs.includes("--resume"),
+        retainCoverageItems: false,
+        ...(heapLimitMb === undefined ? {} : { heapLimitMb }),
+        ...(progress ? { onProgress: progress } : {}),
+        onRun,
+      })
+      : runAuthoredExperiment(config, (report, completed, total) => onRun(report, completed, total));
     writeAuthoredExperiment(output, result);
     console.log(`wrote ${result.runs.length} authored-project runs and separate summaries to ${output}`);
     return;
@@ -276,11 +405,11 @@ if (command === "families") {
 } else if (command === "generate") {
   commandGenerate(args);
 } else if (command === "run") {
-  commandRun(args);
+  await commandRun(args);
 } else if (command === "experiment") {
-  commandExperiment(args);
+  await commandExperiment(args);
 } else if (command === "corpus") {
-  commandCorpus(args);
+  await commandCorpus(args);
 } else {
   usage(`unknown command ${command}`);
 }

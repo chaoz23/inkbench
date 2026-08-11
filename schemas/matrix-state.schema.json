@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chaoz23/inkbench/blob/main/schemas/matrix-state.schema.json",
+  "title": "InkBench resumable matrix state v1",
+  "type": "object",
+  "required": ["schemaVersion", "status", "completedCells", "totalCells", "config", "runIds"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "benchmarkTier": { "enum": ["authored-project"] },
+    "status": { "enum": ["running", "complete"] },
+    "completedCells": { "type": "integer", "minimum": 0 },
+    "totalCells": { "type": "integer", "minimum": 1 },
+    "config": { "type": "object" },
+    "runIds": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+  }
+}

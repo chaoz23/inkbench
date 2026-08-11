@@ -1,6 +1,7 @@
 import { Compiler, CompilerOptions, Story } from "inkjs/full";
 import { hash, stableJson, variableValueTokens } from "./hash.js";
 import { parseInkJson } from "./ink-json.js";
+import { ResourceGuards } from "./resource-guards.js";
 import type {
   BenchmarkFixture,
   BugDiscovery,
@@ -9,13 +10,25 @@ import type {
   CoverageDelta,
   CoverageItems,
   Observation,
+  ResourceStopReason,
+  ResourceUsage,
   RuntimeFinding,
+  SnapshotMemoryUsage,
   TransitionResult,
 } from "./types.js";
 
 interface SnapshotRecord {
+  snapshotId: string;
   stateJson: string;
   observation: Observation;
+  bytes: number;
+  references: number;
+  permanent: boolean;
+}
+
+interface ControllerOptions {
+  guards?: ResourceGuards;
+  onTransition?: (result: TransitionResult) => void;
 }
 
 const ZERO_COVERAGE: CoverageCounts = {
@@ -93,6 +106,20 @@ class CoverageTracker {
     };
   }
 
+  memoryBytes(): number {
+    const sets = [
+      this.locations,
+      this.configurations,
+      this.choices,
+      this.edges,
+      this.semanticStates,
+      this.rawStates,
+      this.variableValues,
+      this.variableTransitions,
+    ];
+    return sets.reduce((total, values) => total + [...values].reduce((sum, value) => sum + Buffer.byteLength(value, "utf8"), 0), 0);
+  }
+
   private observeState(observation: Observation): void {
     this.locations.add(observation.location);
     this.configurations.add(hash(observation.choices.map((choice) => choice.id)));
@@ -148,8 +175,20 @@ export class InstrumentedController {
   private readonly coverageTracker = new CoverageTracker();
   private readonly discoveries = new Map<string, BugDiscovery>();
   private readonly findings = new Map<string, RuntimeFinding>();
+  private readonly guards: ResourceGuards;
+  private readonly onTransition: ((result: TransitionResult) => void) | undefined;
   private active: SnapshotRecord | null = null;
   private nextSnapshot = 0;
+  private snapshotBytes = 0;
+  private peakSnapshotBytes = 0;
+  private checkpointBytes = 0;
+  private peakCheckpointBytes = 0;
+  private peakSnapshots = 0;
+  private snapshotsCreated = 0;
+  private snapshotsReleased = 0;
+  private explicitReferences = 0;
+  private peakCoverageBytes = 0;
+  private nextGuardTransition = 0;
   private operationErrors: string[] = [];
   private operationWarnings: string[] = [];
   private readonly searchWallStart: number;
@@ -161,12 +200,14 @@ export class InstrumentedController {
   episodesCompleted = 0;
   readonly rootSnapshotId: string;
 
-  constructor(fixture: BenchmarkFixture, budget: number, storySeed: number) {
+  constructor(fixture: BenchmarkFixture, budget: number, storySeed: number, options: ControllerOptions = {}) {
     if (!Number.isSafeInteger(budget) || budget < 1) throw new RangeError("budget must be a positive integer");
     if (!Number.isSafeInteger(storySeed) || storySeed < 1) throw new RangeError("story seed must be a positive integer");
     this.fixture = fixture;
     this.budget = budget;
     this.storySeed = storySeed;
+    this.guards = options.guards ?? new ResourceGuards();
+    this.onTransition = options.onTransition;
     this.storyJson = compile(fixture);
     this.story = new Story(parseInkJson(this.storyJson));
     this.story.onError = (message: string, type: number) => {
@@ -179,8 +220,12 @@ export class InstrumentedController {
     this.searchCpuStart = process.cpuUsage();
     const root = this.advanceAndCapture([], [], undefined);
     this.rootSnapshotId = root.snapshotId;
+    const rootRecord = this.snapshots.get(root.snapshotId)!;
+    rootRecord.permanent = true;
     this.coverageTracker.observeRoot(root);
+    this.observeCoverageMemory();
     this.recordFindings(root, 0);
+    this.checkResourceBoundary(true);
   }
 
   get remaining(): number {
@@ -188,7 +233,11 @@ export class InstrumentedController {
   }
 
   get exhausted(): boolean {
-    return this.remaining <= 0;
+    return this.remaining <= 0 || this.checkResourceBoundary(false) !== null;
+  }
+
+  get resourceStopReason(): ResourceStopReason | null {
+    return this.guards.stopReason;
   }
 
   get coverage(): CoverageCounts {
@@ -207,13 +256,71 @@ export class InstrumentedController {
     return [...this.findings.values()].sort((left, right) => left.transition - right.transition || left.kind.localeCompare(right.kind) || left.value.localeCompare(right.value));
   }
 
+  get snapshotMemory(): SnapshotMemoryUsage {
+    return {
+      created: this.snapshotsCreated,
+      released: this.snapshotsReleased,
+      current: this.snapshots.size,
+      peak: this.peakSnapshots,
+      explicitReferences: this.explicitReferences,
+      currentBytes: this.snapshotBytes,
+      peakBytes: this.peakSnapshotBytes,
+      checkpointBytes: this.checkpointBytes,
+      peakCheckpointBytes: this.peakCheckpointBytes,
+    };
+  }
+
+  get coverageIndexBytes(): number {
+    return this.coverageTracker.memoryBytes();
+  }
+
+  resourceUsage(stopReason: ResourceStopReason): ResourceUsage {
+    const finalCoverageBytes = this.coverageIndexBytes;
+    this.peakCoverageBytes = Math.max(this.peakCoverageBytes, finalCoverageBytes);
+    return {
+      limits: {
+        memoryCapBytes: this.guards.memoryCapBytes,
+        timeCapMs: this.guards.timeCapMs,
+      },
+      stopReason,
+      process: {
+        peak: this.guards.peak,
+        final: this.guards.final,
+      },
+      snapshots: this.snapshotMemory,
+      coverageIndexBytes: finalCoverageBytes,
+      peakCoverageIndexBytes: this.peakCoverageBytes,
+    };
+  }
+
+  retain(snapshotId: string): void {
+    const record = this.snapshots.get(snapshotId);
+    if (!record) throw new RangeError(`unknown snapshot: ${snapshotId}`);
+    if (record.references === 0 && !record.permanent) {
+      this.checkpointBytes += record.bytes;
+      this.peakCheckpointBytes = Math.max(this.peakCheckpointBytes, this.checkpointBytes);
+    }
+    record.references += 1;
+    this.explicitReferences += 1;
+  }
+
+  release(snapshotId: string): void {
+    const record = this.snapshots.get(snapshotId);
+    if (!record) throw new RangeError(`unknown snapshot: ${snapshotId}`);
+    if (record.references < 1) throw new RangeError(`snapshot is not explicitly retained: ${snapshotId}`);
+    record.references -= 1;
+    this.explicitReferences -= 1;
+    if (record.references === 0 && !record.permanent) this.checkpointBytes -= record.bytes;
+    this.releaseIfUnused(record);
+  }
+
   launch(snapshotId = this.rootSnapshotId): Observation {
     const record = this.snapshots.get(snapshotId);
     if (!record) throw new RangeError(`unknown snapshot: ${snapshotId}`);
     this.story.state.LoadJsonObj(parseInkJson(record.stateJson));
     this.story.state.onDidLoadState?.();
     this.story.ResetErrors();
-    this.active = record;
+    this.setActive(record);
     this.launches += 1;
     if (snapshotId === this.rootSnapshotId) this.rootLaunches += 1;
     return record.observation;
@@ -239,8 +346,9 @@ export class InstrumentedController {
       [...before.choiceTextPath, choice.text],
       choice.targetPath,
     );
-    this.active = this.snapshots.get(after.snapshotId)!;
+    this.setActive(this.snapshots.get(after.snapshotId)!);
     const coverageDelta = this.coverageTracker.observeTransition(before, choice, after);
+    this.observeCoverageMemory();
     this.recordFindings(after, this.transitions);
     const newlyDiscoveredBugIds: string[] = [];
     for (const event of after.events) {
@@ -260,7 +368,34 @@ export class InstrumentedController {
       newlyDiscoveredBugIds.push(event.value);
     }
     if (after.terminal) this.episodesCompleted += 1;
-    return { before, choice, after, coverageDelta, transition: this.transitions, newlyDiscoveredBugIds };
+    const result = { before, choice, after, coverageDelta, transition: this.transitions, newlyDiscoveredBugIds };
+    this.checkResourceBoundary(false);
+    this.onTransition?.(result);
+    return result;
+  }
+
+  private setActive(record: SnapshotRecord): void {
+    const previous = this.active;
+    this.active = record;
+    if (previous && previous.snapshotId !== record.snapshotId) this.releaseIfUnused(previous);
+  }
+
+  private releaseIfUnused(record: SnapshotRecord): void {
+    if (record.permanent || record.references > 0 || this.active?.snapshotId === record.snapshotId) return;
+    if (!this.snapshots.delete(record.snapshotId)) return;
+    this.snapshotBytes -= record.bytes;
+    this.snapshotsReleased += 1;
+  }
+
+  private observeCoverageMemory(): void {
+    this.peakCoverageBytes = Math.max(this.peakCoverageBytes, this.coverageTracker.memoryBytes());
+  }
+
+  private checkResourceBoundary(force: boolean): ResourceStopReason | null {
+    if (this.guards.stopReason) return this.guards.stopReason;
+    if (!force && this.transitions < this.nextGuardTransition) return null;
+    this.nextGuardTransition = this.transitions + 64;
+    return this.guards.check();
   }
 
   private recordFindings(observation: Observation, transition: number): void {
@@ -363,7 +498,19 @@ export class InstrumentedController {
       semanticKey,
       rawStateKey,
     };
-    this.snapshots.set(snapshotId, { stateJson: rawState, observation });
+    const bytes = Buffer.byteLength(rawState, "utf8") + Buffer.byteLength(JSON.stringify(observation), "utf8");
+    this.snapshots.set(snapshotId, {
+      snapshotId,
+      stateJson: rawState,
+      observation,
+      bytes,
+      references: 0,
+      permanent: false,
+    });
+    this.snapshotBytes += bytes;
+    this.peakSnapshotBytes = Math.max(this.peakSnapshotBytes, this.snapshotBytes);
+    this.peakSnapshots = Math.max(this.peakSnapshots, this.snapshots.size);
+    this.snapshotsCreated += 1;
     return observation;
   }
 
