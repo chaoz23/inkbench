@@ -3,13 +3,14 @@
   "$id": "https://github.com/chaoz23/inkbench/blob/v0.1.0/schemas/run-report.schema.json",
   "title": "InkBench run report v1",
   "type": "object",
-  "required": ["schemaVersion", "runId", "fixtureId", "fixtureGeneratorVersion", "fixtureSourceSha256", "family", "algorithm", "algorithmVersion", "fixtureSeed", "searchSeed", "storySeed", "difficulty", "dimensions", "budget", "counts", "coverage", "discoveredBugs", "plantedBugIds", "timing", "runtime", "status", "error", "notes"],
+  "required": ["schemaVersion", "runId", "fixtureId", "fixtureGeneratorVersion", "fixtureSourceSha256", "benchmarkTier", "family", "algorithm", "algorithmVersion", "fixtureSeed", "searchSeed", "storySeed", "difficulty", "dimensions", "budget", "counts", "coverage", "coverageItems", "discoveredBugs", "runtimeFindings", "plantedBugIds", "timing", "runtime", "status", "error", "notes"],
   "properties": {
     "schemaVersion": { "const": 1 },
     "runId": { "type": "string" },
     "fixtureId": { "type": "string" },
     "fixtureGeneratorVersion": { "type": "string" },
     "fixtureSourceSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "benchmarkTier": { "enum": ["generated-planted", "authored-project"] },
     "family": { "type": "string" },
     "algorithm": { "enum": ["random", "systematic", "coverage", "swarm", "inkcheck"] },
     "algorithmVersion": { "type": "string" },
@@ -37,7 +38,17 @@
       }
     },
     "coverage": { "type": ["object", "null"] },
+    "coverageItems": {
+      "type": ["object", "null"],
+      "properties": {
+        "locations": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "choices": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "edges": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "semanticStates": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      }
+    },
     "discoveredBugs": { "type": "array", "items": { "type": "object" } },
+    "runtimeFindings": { "type": "array", "items": { "type": "object" } },
     "plantedBugIds": { "type": "array", "items": { "type": "string" } },
     "timing": { "type": "object" },
     "runtime": { "type": "object" },

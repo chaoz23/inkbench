@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "tier": "authored-project",
+  "corpusVersion": "authored-corpus-v1",
+  "source": {
+    "repository": "https://github.com/chaoz23/inkcheck",
+    "commit": "7e049f8",
+    "manifestPath": "benchmarks/authored-promotion-manifest.json"
+  },
+  "cases": [
+    {
+      "id": "dog-ink-adventure",
+      "family": "function-and-loop-heavy",
+      "projectSize": "small",
+      "directory": "dog-ink-adventure",
+      "source": {
+        "name": "Dog Ink Adventure",
+        "author": "Earok",
+        "license": "MIT",
+        "repository": "https://github.com/earok/dog_ink_adventure",
+        "commit": "402b47c004c40c599877ae9dc75cc0aad7db887c",
+        "licenseFile": "LICENSE",
+        "licenseSha256": "4c960729bc02ac2f5818f3db06ed4a95130bc11e7cf084b151f1f99c2d6517a8",
+        "entrypoint": "root.ink",
+        "randomness": "none",
+        "compileSetup": "The entrypoint and seven INCLUDE files compile directly.",
+        "structuralMeasures": {
+          "authoredLines": 456,
+          "authoredBytes": 11657,
+          "compiledWords": 148,
+          "knots": 36,
+          "stitches": 0,
+          "functions": 26,
+          "choices": 15,
+          "gathers": 3,
+          "diverts": 148
+        }
+      },
+      "compiled": {
+        "file": "story.ink.json",
+        "sha256": "cfdd223a1215efd14e9967d179ab698aea120d6be04c464da7d66d6443f3ad36",
+        "compiler": "inklecate",
+        "compilerVersion": "1.2.1",
+        "arguments": ["-c"],
+        "provenance": "Official ink release v1.2.1; output JSON final newline normalized for repository packaging."
+      },
+      "files": {
+        "binary.ink": "a7d6f2326b0ac80ac554ea0af367bad0b3702c9b1b202186eb28e3cca7b5cefe",
+        "dog.ink": "dbe0a9e21c09be4db8b0278a753d574c146429ba45d9b8bf971b44663419391a",
+        "entity.ink": "6726f80eb3a2f74d078888c6cb83a7f8da8eb74be92e044803f3be8a958f12a4",
+        "items.ink": "81b8374b083b6458e6e9b5111478e85f23d69c2953fda96bd1220c52fa5699a6",
+        "properties.ink": "ab7921145822821d2b1aa21b4b08428bd693a697c32627c8bc3b9bed63225f89",
+        "rooms.ink": "1c74026547332870cd201b6f5fa46eb54eb9d720acc3dc98f9969d3b3ab0d0fa",
+        "root.ink": "ac9463c3cc9f0f1434cd1f9e54081599cc6f9b3a952d3983c1051482d54b0c02",
+        "tick.ink": "662b2a9ce6123e6464ee085f35db483988d6d98ddba0cec0a75009ee77fce84a"
+      }
+    },
+    {
+      "id": "the-intercept",
+      "family": "choice-dense-authored-story",
+      "projectSize": "medium",
+      "directory": "the-intercept",
+      "source": {
+        "name": "The Intercept",
+        "author": "inkle Ltd.",
+        "license": "MIT",
+        "repository": "https://github.com/inkle/the-intercept",
+        "commit": "2a816b56e61ce4bf02bec1c638074645bdd871e3",
+        "licenseFile": "LICENSE-AND-PROVENANCE.md",
+        "licenseSha256": "4b0d7e6b2ccac7794d0705ee40a6728d664ff1cd80994b5d31077a4cde38f3da",
+        "entrypoint": "TheIntercept.ink",
+        "randomness": "none",
+        "compileSetup": "The single source file compiles directly.",
+        "structuralMeasures": {
+          "authoredLines": 1686,
+          "authoredBytes": 100539,
+          "compiledWords": 14728,
+          "knots": 32,
+          "stitches": 30,
+          "functions": 2,
+          "choices": 343,
+          "gathers": 95,
+          "diverts": 230
+        }
+      },
+      "compiled": {
+        "file": "story.ink.json",
+        "sha256": "2a441a97a345cfc7d3c944e758949d6c3b37ccfe88a75ddad06cf3ac83a637c6",
+        "compiler": "inklecate",
+        "compilerVersion": "1.2.1",
+        "arguments": ["-c"],
+        "provenance": "Official ink release v1.2.1; output JSON final newline normalized for repository packaging."
+      },
+      "files": {
+        "TheIntercept.ink": "1d7b5653b689a9da6801bbfaaa3fbd20b0cc47113b28bb1b1774f6cd11e9eea4"
+      }
+    },
+    {
+      "id": "heresy2",
+      "family": "stitch-heavy-random-authored-story",
+      "projectSize": "large",
+      "directory": "heresy2",
+      "source": {
+        "name": "Heresy II",
+        "author": "Randall Frank",
+        "license": "CC-BY-4.0",
+        "repository": "https://github.com/randall-frank/heresy2-assets",
+        "commit": "37b8a7804217bb40a9f69f6fd9c173f2017d550e",
+        "licenseFile": "LICENSE",
+        "licenseSha256": "7e7170e3cebf88a9f60c7b8421418323c09304da1af4d5e90f4da1dc1c8a2661",
+        "entrypoint": "heresy2.ink",
+        "randomness": "seeded-runtime",
+        "compileSetup": "item_globals.ink is upstream generated output from src/items.toml. InkBench normalizes the missing final newline in agora.ink; story content is otherwise unchanged.",
+        "structuralMeasures": {
+          "authoredLines": 2675,
+          "authoredBytes": 172001,
+          "compiledWords": 22630,
+          "knots": 38,
+          "stitches": 189,
+          "functions": 8,
+          "choices": 393,
+          "gathers": 0,
+          "diverts": 541
+        }
+      },
+      "compiled": {
+        "file": "story.ink.json",
+        "sha256": "5c65cf077478ad70985341e564695cb8ab35af20ec574d12b517d1e18f9a4bb7",
+        "compiler": "inklecate",
+        "compilerVersion": "1.2.1",
+        "arguments": ["-c"],
+        "provenance": "Official ink release v1.2.1; output JSON final newline normalized for repository packaging."
+      },
+      "files": {
+        "agora.ink": "6baf3ead803c184d1d0d4ebe673c8a4f425ad6bbb67e7191f322bee17d16487a",
+        "apollo.ink": "a206d191be6b45a5ed274f8e1f0e1f1ff239ca002c18c03ec2ce1814150cc612",
+        "apollo_backroom.ink": "1447f4e26c4cdffc8cdd2ffc0db785be19b90602b0f84f38cf94d3d79ca9e9fa",
+        "ascension.ink": "165e24d2aa4cec722b948c7d869e8d1122784a1dffc9730e26fe01e973923ed0",
+        "base.ink": "a39df60266e74bbee37537a2ad1f8f8c71f85f99b816ec36497809e387724bb8",
+        "base_return.ink": "7323231078a19b487cca12fda5368c82d6a639cbbea9d468fb26bc49c282241a",
+        "computerroom.ink": "f288a73f27d0bb889a3cbb0150170532a8b9a6cf1ce7aafc1db0afc113f8d419",
+        "control.ink": "53fc8f9c5ad0883b57c6ba1d5241f4579ec3dc679f947246e95e041c2d0c2b3c",
+        "debrief.ink": "e9faa860595489ebf720c21967bace915787e22f2470b0b8198f84de2b5ab100",
+        "garden.ink": "59e192add6e8b65ee0934ed5c6f4b9bcb1d2815055986491aed4cc18983ba56d",
+        "globals.ink": "71adf0ff96ebc77fb65b0dda2de46edf3338d3a8edba830d9c748c037b4de837",
+        "heresy2.ink": "49db768479e523f39ae9eb838f6daa0798244b7bbe266d686a7a967ccf66f7ea",
+        "hypermarket.ink": "9f6a34483afa4a9b1c6833f8ee412d8d79e6b58f63ecb33a4623cbae724968be",
+        "item_globals.ink": "5e56c02b20c707dac827c9c69d5d3646d191ae956a96eb41fd4bbd709f352596",
+        "logging.ink": "17f2b6633ad035efae858518e94e59f43a9e7fc77cbab89690d2b1e19672efa0",
+        "marble_workshop.ink": "90ba3bf76c81da2afbb33852f59a617c0e4004ae45810e9ed0de38dcb9dbf345",
+        "normal.ink": "4296c5267f1cfbdc75dcd84e4fc074e7f7f25eb6e72d89c530924ebfafb27ef0",
+        "pnyx.ink": "6d3faf40f8c2de12bfdd6165937464b68362074dfa32a45a03f59a725894d529",
+        "river.ink": "fb101aac680839a7090a09264d04e9bd86581c31a4d03ea0ec208483974510a7",
+        "temple.ink": "90fe59b613ee9d0e02ef22e41a551d9ede0c783d163f671450b3357bcf235f5a",
+        "workshop.ink": "e1319fc51bcdd63c1e9a05660d7f2c9118ee5c3beda40263a452c366b89b10da"
+      }
+    }
+  ]
+}

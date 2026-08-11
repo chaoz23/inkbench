@@ -513,5 +513,5 @@ export function generateFixture(family: BugFamily, seed: number, difficulty = 1)
     "// Search strategies must not receive the fixture manifest or generation parameters.",
     ...built.body,
   ].join("\n").trimEnd() + "\n";
-  return { source, manifest };
+  return { tier: "generated-planted", source, manifest };
 }

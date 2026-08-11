@@ -1,4 +1,4 @@
-import { hash } from "./hash.js";
+import { fixtureSourceHash, hash } from "./hash.js";
 import { InstrumentedController } from "./runtime.js";
 import { SCHEMA_VERSION, type InProcessAlgorithmId, type RunReport, type RunRequest } from "./types.js";
 import { runInkCheckAdapter } from "../adapters/inkcheck.js";
@@ -18,7 +18,7 @@ export function runBenchmark(request: RunRequest): RunReport {
   const runId = hash({
     fixtureId: request.fixture.manifest.fixtureId,
     generatorVersion: request.fixture.manifest.generatorVersion,
-    fixtureSourceSha256: hash(request.fixture.source, 64),
+    fixtureSourceSha256: fixtureSourceHash(request.fixture),
     algorithm: request.algorithm,
     algorithmVersion: searcher.version,
     searchSeed: request.searchSeed,
@@ -37,7 +37,8 @@ export function runBenchmark(request: RunRequest): RunReport {
       runId,
       fixtureId: request.fixture.manifest.fixtureId,
       fixtureGeneratorVersion: request.fixture.manifest.generatorVersion,
-      fixtureSourceSha256: hash(request.fixture.source, 64),
+      fixtureSourceSha256: fixtureSourceHash(request.fixture),
+      benchmarkTier: request.fixture.tier,
       family: request.fixture.manifest.family,
       algorithm: request.algorithm,
       algorithmVersion: searcher.version,
@@ -54,7 +55,9 @@ export function runBenchmark(request: RunRequest): RunReport {
         episodesCompleted: controller.episodesCompleted,
       },
       coverage: controller.coverage,
+      coverageItems: controller.coverageItems,
       discoveredBugs: controller.bugDiscoveries,
+      runtimeFindings: controller.runtimeFindings,
       plantedBugIds: request.fixture.manifest.bugs.map((bug) => bug.id),
       timing: {
         wallMs: performance.now() - wallStart,
@@ -63,7 +66,9 @@ export function runBenchmark(request: RunRequest): RunReport {
       runtime: { engine: "inkjs", engineVersion: "2.4.0", node: process.version, platform: `${process.platform}-${process.arch}` },
       status: "completed",
       error: null,
-      notes: outcome.notes,
+      notes: request.fixture.tier === "authored-project"
+        ? [...outcome.notes, `Loaded pinned ${request.fixture.manifest.compiler.name} ${request.fixture.manifest.compiler.version} compiled artifact ${request.fixture.manifest.compiler.artifactSha256}.`]
+        : outcome.notes,
     };
   } catch (error) {
     const cpu = process.cpuUsage(cpuStart);
@@ -74,7 +79,8 @@ export function runBenchmark(request: RunRequest): RunReport {
       runId,
       fixtureId: request.fixture.manifest.fixtureId,
       fixtureGeneratorVersion: request.fixture.manifest.generatorVersion,
-      fixtureSourceSha256: hash(request.fixture.source, 64),
+      fixtureSourceSha256: fixtureSourceHash(request.fixture),
+      benchmarkTier: request.fixture.tier,
       family: request.fixture.manifest.family,
       algorithm: request.algorithm,
       algorithmVersion: searcher.version,
@@ -91,13 +97,17 @@ export function runBenchmark(request: RunRequest): RunReport {
         episodesCompleted: controller?.episodesCompleted ?? 0,
       },
       coverage: controller?.coverage ?? null,
+      coverageItems: controller?.coverageItems ?? null,
       discoveredBugs: controller?.bugDiscoveries ?? [],
+      runtimeFindings: controller?.runtimeFindings ?? [],
       plantedBugIds: request.fixture.manifest.bugs.map((bug) => bug.id),
       timing: { wallMs: performance.now() - wallStart, cpuMs: (cpu.user + cpu.system) / 1_000 },
       runtime: { engine: "inkjs", engineVersion: "2.4.0", node: process.version, platform: `${process.platform}-${process.arch}` },
       status: compileError ? "compile-error" : "runtime-error",
       error: message,
-      notes: [],
+      notes: request.fixture.tier === "authored-project"
+        ? [`Authored source was pinned at upstream commit ${request.fixture.manifest.source.commit}; compiled artifact ${request.fixture.manifest.compiler.artifactSha256}.`]
+        : [],
     };
   }
 }

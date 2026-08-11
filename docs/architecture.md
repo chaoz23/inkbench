@@ -4,7 +4,7 @@
 
 InkBench is a benchmark harness, not an InkSwarm showcase. It owns fixture generation, compilation, the Ink runtime, observation construction, planted-bug oracles, budgets, instrumentation, repetition, and reports. Search strategies decide only where to launch and which legal choice to take.
 
-The v0.1 runtime uses `inkjs` 2.4.0 in process. It compiles deterministic generated Ink source once per fixture, seeds the Ink runtime separately from the search strategy, and serializes save states through Ink's public save/load API. The runtime choice follows the same JavaScript engine used by InkCheck while avoiding a compiler subprocess inside every experiment cell. A later cross-runtime validation tier should compile with official `inklecate` and replay selected witnesses in the C# runtime.
+The v0.1 runtime uses `inkjs` 2.4.0 in process. It compiles deterministic generated Ink source once per fixture, seeds the Ink runtime separately from the search strategy, and serializes save states through Ink's public save/load API. Authored projects instead load digest-verified JSON compiled by official `inklecate` 1.2.1 with count-all-visits; this supports valid Ink syntax that the `inkjs` compiler does not fully accept while keeping one identical runtime and artifact per compared in-process strategy. A later cross-runtime validation tier should replay generated witnesses in the C# runtime too.
 
 ## Neutral strategy boundary
 
@@ -16,6 +16,10 @@ fixture seed -> generated Ink + manifest -> compiler -> instrumented controller
                    random / systematic / coverage / swarm
                                                         |
                      oracle + coverage + replay evidence
+
+pinned authored sources + licenses -> verified inklecate artifact -> same controller
+                                                                    |
+                                                coverage + runtime-finding evidence
 ```
 
 Every in-process strategy can:
@@ -58,6 +62,12 @@ Each generator returns:
 
 Training, validation, and evaluation partitions should use disjoint fixture-seed ranges. The default presets are development-sized; publishable claims require a preregistered matrix with frozen package/runtime versions.
 
+## Authored-project corpus contract
+
+Authored stories are a second, non-oracle tier. Each entry records upstream repository and commit, author, license/attribution file, entrypoint, every source digest, official compiled-artifact digest, compiler version/arguments, and structural measures. InkBench verifies all digests before a run. Reports have `benchmarkTier: authored-project` and no planted bugs.
+
+Authored reports may compare empirical coverage, runtime findings, terminal episodes, wall/CPU cost, and item-level coverage complementarity. They must not produce planted-bug discovery probabilities or survival curves, and their empirical counts are not coverage percentages without a proven denominator.
+
 ## Strategy set
 
 - **Random**: seeded uniform legal choices from root-started episodes.
@@ -73,3 +83,4 @@ Training, validation, and evaluation partitions should use disjoint fixture-seed
 - State/edge counts are empirical discoveries, not proof-relative percentages unless a fixture is exhaustively enumerated.
 - The InkCheck adapter cannot recover every internal edge metric and currently reports those fields as unavailable.
 - No aggregate leaderboard is authoritative in v0.1. Family curves and paired complementarity are the primary outputs.
+- The first authored corpus has only three consent-safe public projects. It tests transfer, not representativeness of all Ink projects.

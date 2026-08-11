@@ -13,6 +13,14 @@ export type BugFamily =
   | "order-dependent"
   | "compound-needle";
 
+export type AuthoredStoryFamily =
+  | "function-and-loop-heavy"
+  | "choice-dense-authored-story"
+  | "stitch-heavy-random-authored-story";
+
+export type BenchmarkFamily = BugFamily | AuthoredStoryFamily;
+export type BenchmarkTier = "generated-planted" | "authored-project";
+
 export const BUG_FAMILIES: readonly BugFamily[] = [
   "shallow-obvious",
   "deep-corridor",
@@ -68,9 +76,57 @@ export interface FixtureManifest {
 }
 
 export interface GeneratedFixture {
+  tier: "generated-planted";
   source: string;
   manifest: FixtureManifest;
 }
+
+export interface SourceBundle {
+  entrypoint: string;
+  files: Record<string, string>;
+}
+
+export interface CorpusSourceMetadata {
+  name: string;
+  author: string;
+  license: "MIT" | "CC-BY-4.0";
+  repository: string;
+  commit: string;
+  licenseFile: string;
+  entrypoint: string;
+  randomness: "none" | "seeded-runtime";
+  structuralMeasures: Record<string, number>;
+}
+
+export interface AuthoredFixtureManifest {
+  schemaVersion: typeof SCHEMA_VERSION;
+  generatorVersion: "authored-corpus-v1";
+  fixtureId: string;
+  family: AuthoredStoryFamily;
+  seed: 0;
+  difficulty: 1;
+  dimensions: DifficultyCoordinates;
+  parameters: Record<string, number | string | boolean | number[] | string[]>;
+  locations: string[];
+  bugs: PlantedBug[];
+  source: CorpusSourceMetadata;
+  compiler: {
+    name: "inklecate";
+    version: string;
+    artifactSha256: string;
+    arguments: string[];
+  };
+}
+
+export interface AuthoredFixture {
+  tier: "authored-project";
+  source: string;
+  sourceBundle: SourceBundle;
+  compiledStory: string;
+  manifest: AuthoredFixtureManifest;
+}
+
+export type BenchmarkFixture = GeneratedFixture | AuthoredFixture;
 
 export interface ChoiceObservation {
   index: number;
@@ -119,6 +175,13 @@ export interface CoverageDelta extends CoverageCounts {
   total: number;
 }
 
+export interface CoverageItems {
+  locations: string[];
+  choices: string[];
+  edges: string[];
+  semanticStates: string[];
+}
+
 export interface TransitionResult {
   before: Observation;
   choice: ChoiceObservation;
@@ -133,6 +196,15 @@ export interface BugDiscovery {
   transition: number;
   elapsedMs: number;
   cpuMs: number | null;
+  choicePath: number[];
+  choiceTextPath: string[];
+  location: string;
+}
+
+export interface RuntimeFinding {
+  kind: "runtime-error" | "runtime-warning";
+  value: string;
+  transition: number;
   choicePath: number[];
   choiceTextPath: string[];
   location: string;
@@ -161,7 +233,8 @@ export interface RunReport {
   fixtureId: string;
   fixtureGeneratorVersion: string;
   fixtureSourceSha256: string;
-  family: BugFamily;
+  benchmarkTier: BenchmarkTier;
+  family: BenchmarkFamily;
   algorithm: AlgorithmId;
   algorithmVersion: string;
   fixtureSeed: number;
@@ -172,7 +245,9 @@ export interface RunReport {
   budget: BudgetSpec;
   counts: RunCounts;
   coverage: CoverageCounts | null;
+  coverageItems: CoverageItems | null;
   discoveredBugs: BugDiscovery[];
+  runtimeFindings: RuntimeFinding[];
   plantedBugIds: string[];
   timing: RunTiming;
   runtime: {
@@ -187,7 +262,7 @@ export interface RunReport {
 }
 
 export interface RunRequest {
-  fixture: GeneratedFixture;
+  fixture: BenchmarkFixture;
   algorithm: AlgorithmId;
   searchSeed: number;
   storySeed: number;
@@ -208,7 +283,7 @@ export interface ExperimentConfig {
 }
 
 export interface ProbabilityCell {
-  family: BugFamily;
+  family: BenchmarkFamily;
   algorithm: AlgorithmId;
   budget: number;
   runs: number;
@@ -220,7 +295,7 @@ export interface ProbabilityCell {
 }
 
 export interface SurvivalPoint {
-  family: BugFamily;
+  family: BenchmarkFamily;
   algorithm: AlgorithmId;
   budget: number;
   transition: number;

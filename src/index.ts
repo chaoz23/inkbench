@@ -5,3 +5,6 @@ export { runBenchmark } from "./core/run.js";
 export { InstrumentedController } from "./core/runtime.js";
 export { runExperiment, writeExperiment } from "./experiments/run.js";
 export { summarizeRuns, renderMarkdown } from "./experiments/summarize.js";
+export { getAuthoredCorpusManifest, listAuthoredStories, loadAuthoredFixture } from "./corpus/load.js";
+export { runAuthoredExperiment, writeAuthoredExperiment, renderAuthoredMarkdown } from "./corpus/experiment.js";
+export type * from "./corpus/experiment.js";

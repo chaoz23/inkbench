@@ -1,12 +1,14 @@
 import { Compiler, CompilerOptions, Story } from "inkjs/full";
 import { hash, stableJson, variableValueTokens } from "./hash.js";
 import type {
+  BenchmarkFixture,
   BugDiscovery,
   ChoiceObservation,
   CoverageCounts,
   CoverageDelta,
-  GeneratedFixture,
+  CoverageItems,
   Observation,
+  RuntimeFinding,
   TransitionResult,
 } from "./types.js";
 
@@ -81,6 +83,15 @@ class CoverageTracker {
     };
   }
 
+  items(): CoverageItems {
+    return {
+      locations: [...this.locations].sort(),
+      choices: [...this.choices].sort(),
+      edges: [...this.edges].sort(),
+      semanticStates: [...this.semanticStates].sort(),
+    };
+  }
+
   private observeState(observation: Observation): void {
     this.locations.add(observation.location);
     this.configurations.add(hash(observation.choices.map((choice) => choice.id)));
@@ -109,14 +120,15 @@ function extractVariables(story: Story): Record<string, unknown> {
   return out;
 }
 
-function compile(source: string): string {
+function compile(fixture: BenchmarkFixture): string {
+  if (fixture.tier === "authored-project") return fixture.compiledStory;
   const errors: string[] = [];
   const warnings: string[] = [];
   const options = new CompilerOptions(null, [], true, (message: string, type: number) => {
     if (type === 2) errors.push(message);
     else warnings.push(message);
   });
-  const compiler = new Compiler(source, options);
+  const compiler = new Compiler(fixture.source, options);
   const story = compiler.Compile();
   const json = story.ToJson();
   if (errors.length > 0) throw new Error(`Ink compilation failed:\n${errors.join("\n")}`);
@@ -125,7 +137,7 @@ function compile(source: string): string {
 }
 
 export class InstrumentedController {
-  readonly fixture: GeneratedFixture;
+  readonly fixture: BenchmarkFixture;
   readonly budget: number;
   readonly storySeed: number;
   readonly storyJson: string;
@@ -134,6 +146,7 @@ export class InstrumentedController {
   private readonly snapshots = new Map<string, SnapshotRecord>();
   private readonly coverageTracker = new CoverageTracker();
   private readonly discoveries = new Map<string, BugDiscovery>();
+  private readonly findings = new Map<string, RuntimeFinding>();
   private active: SnapshotRecord | null = null;
   private nextSnapshot = 0;
   private operationErrors: string[] = [];
@@ -147,13 +160,13 @@ export class InstrumentedController {
   episodesCompleted = 0;
   readonly rootSnapshotId: string;
 
-  constructor(fixture: GeneratedFixture, budget: number, storySeed: number) {
+  constructor(fixture: BenchmarkFixture, budget: number, storySeed: number) {
     if (!Number.isSafeInteger(budget) || budget < 1) throw new RangeError("budget must be a positive integer");
     if (!Number.isSafeInteger(storySeed) || storySeed < 1) throw new RangeError("story seed must be a positive integer");
     this.fixture = fixture;
     this.budget = budget;
     this.storySeed = storySeed;
-    this.storyJson = compile(fixture.source);
+    this.storyJson = compile(fixture);
     this.story = new Story(this.storyJson);
     this.story.onError = (message: string, type: number) => {
       if (type === 2) this.operationErrors.push(message);
@@ -161,11 +174,12 @@ export class InstrumentedController {
     };
     this.story.state.storySeed = storySeed;
     this.story.state.previousRandom = 0;
+    this.searchWallStart = performance.now();
+    this.searchCpuStart = process.cpuUsage();
     const root = this.advanceAndCapture([], [], undefined);
     this.rootSnapshotId = root.snapshotId;
     this.coverageTracker.observeRoot(root);
-    this.searchWallStart = performance.now();
-    this.searchCpuStart = process.cpuUsage();
+    this.recordFindings(root, 0);
   }
 
   get remaining(): number {
@@ -180,8 +194,16 @@ export class InstrumentedController {
     return this.coverageTracker.counts();
   }
 
+  get coverageItems(): CoverageItems {
+    return this.coverageTracker.items();
+  }
+
   get bugDiscoveries(): BugDiscovery[] {
     return [...this.discoveries.values()].sort((left, right) => left.transition - right.transition || left.bugId.localeCompare(right.bugId));
+  }
+
+  get runtimeFindings(): RuntimeFinding[] {
+    return [...this.findings.values()].sort((left, right) => left.transition - right.transition || left.kind.localeCompare(right.kind) || left.value.localeCompare(right.value));
   }
 
   launch(snapshotId = this.rootSnapshotId): Observation {
@@ -217,6 +239,7 @@ export class InstrumentedController {
     );
     this.active = this.snapshots.get(after.snapshotId)!;
     const coverageDelta = this.coverageTracker.observeTransition(before, choice, after);
+    this.recordFindings(after, this.transitions);
     const newlyDiscoveredBugIds: string[] = [];
     for (const event of after.events) {
       if (event.kind !== "bug" || this.discoveries.has(event.value)) continue;
@@ -236,6 +259,22 @@ export class InstrumentedController {
     }
     if (after.terminal) this.episodesCompleted += 1;
     return { before, choice, after, coverageDelta, transition: this.transitions, newlyDiscoveredBugIds };
+  }
+
+  private recordFindings(observation: Observation, transition: number): void {
+    for (const event of observation.events) {
+      if (event.kind !== "runtime-error" && event.kind !== "runtime-warning") continue;
+      const key = hash({ kind: event.kind, value: event.value });
+      if (this.findings.has(key)) continue;
+      this.findings.set(key, {
+        kind: event.kind,
+        value: event.value,
+        transition,
+        choicePath: [...observation.choicePath],
+        choiceTextPath: [...observation.choiceTextPath],
+        location: observation.location,
+      });
+    }
   }
 
   private advanceAndCapture(choicePath: number[], choiceTextPath: string[], fallbackPath: string | undefined): Observation {

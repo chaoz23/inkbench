@@ -9,6 +9,7 @@
 - Optional InkCheck CLI adapter.
 - Repeated fixed-budget experiments with raw records, probability tables, Kaplan–Meier survival points, competence maps, and complementarity.
 - Cross-platform CI and deterministic regression tests.
+- Pinned, licensed three-project authored corpus with official compiled artifacts and separate coverage/complementarity reporting.
 
 ## v0.2.0 — measurement validity
 
@@ -19,9 +20,9 @@
 - Frozen training/validation/blind-evaluation seed partitions and preregistration files.
 - Statistical intervals and paired significance/effect-size reporting.
 
-## v0.3.0 — corpus and adapters
+## v0.3.0 — corpus expansion and adapters
 
-- Real public Ink story corpus with licensing/provenance records.
+- Broader real public Ink story corpus with licensing/provenance records and representativeness analysis.
 - Stable adapter SDK and conformance suite.
 - Fully automated InkCheck adapter installation/version pinning.
 - Importable adapters for future searchers and hosted runners.

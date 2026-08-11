@@ -1,10 +1,10 @@
 # InkBench
 
-InkBench is a neutral, reproducible benchmarking harness for measuring how effectively different search algorithms discover planted bugs in [Ink](https://github.com/inkle/ink) interactive stories.
+InkBench is a neutral, reproducible benchmarking harness for measuring how effectively different search algorithms discover planted bugs and explore real [Ink](https://github.com/inkle/ink) interactive stories.
 
 It does not exist to make InkSwarm win. It exists to discover whether InkSwarm—or any future searcher—improves bug yield per fixed compute budget or reliably finds classes of failures that simpler strategies miss.
 
-Version 0.1.0 is a working research vertical slice: it generates real Ink fixtures, compiles and executes them through pinned `inkjs`, enforces transition budgets, runs four internal strategies, invokes the real InkCheck CLI when configured, records exact repro paths, and emits raw datasets plus competence, survival, and complementarity summaries.
+Version 0.1.0 is a working research vertical slice: it generates Ink fixtures, runs a pinned and licensed three-project authored corpus, enforces transition budgets, runs four internal strategies, invokes the real InkCheck CLI when configured, records exact repro paths, and emits raw datasets plus competence, survival, coverage, and complementarity summaries.
 
 ## What ships in 0.1.0
 
@@ -13,6 +13,7 @@ Version 0.1.0 is a working research vertical slice: it generates real Ink fixtur
 - One shared instrumented runtime and opaque checkpoint API for internal strategies.
 - Random, deterministic systematic, simple coverage-guided, and minimal InkSwarm explorers.
 - An optional adapter for the actual [InkCheck](https://github.com/chaoz23/inkcheck) CLI—not a favorable reimplementation.
+- A separate authored-project tier containing Dog Ink Adventure, The Intercept, and Heresy II with pinned upstream commits, licenses, source/artifact hashes, and official `inklecate` 1.2.1 compiled artifacts.
 - Transition, launch, wall-time, CPU-time, empirical coverage, first-discovery, and replay evidence.
 - NDJSON, CSV, JSON, Markdown, generated `.ink`, and manifest outputs.
 - Detection-probability cells, right-censored survival points, family competence maps, and paired exclusive/union discoveries.
@@ -39,6 +40,10 @@ node dist/cli.js run \
 
 # Produce a small repeated experiment
 npm run experiment:quick
+
+# Verify and smoke-test the authored corpus
+node dist/cli.js corpus verify
+npm run corpus:smoke
 ```
 
 The package binary is also named `inkbench` after installation.
@@ -61,12 +66,29 @@ The package binary is also named `inkbench` after installation.
 
 Each generated fixture has a machine-readable manifest with difficulty coordinates for depth, width, state dimensionality, rarity, delay, revisit, deception, and order. Searchers never receive the manifest or generator targets.
 
+## Two benchmark tiers
+
+| Tier | Question | Primary evidence |
+| --- | --- | --- |
+| `generated-planted` | Does a strategy find a known defect within budget? | discovery probability, time-to-discovery, survival, bug-family competence, exclusive bugs |
+| `authored-project` | Does behavior transfer to realistic Ink structure? | empirical state/edge/location coverage, runtime findings, compute cost, paired exclusive coverage |
+
+The tiers are deliberately not pooled. Real stories have no planted-bug oracle, so a higher coverage count is neither a bug discovery nor proof-relative coverage. They provide ecological-validity and complementarity evidence around the causal planted-bug experiments.
+
+The authored corpus is inherited from InkCheck's promotion corpus and includes:
+
+- **Dog Ink Adventure** by Earok (MIT), a small function- and loop-heavy multi-file project;
+- **The Intercept** by inkle Ltd. (MIT), a choice-dense medium story; and
+- **Heresy II** by Randall Frank (CC BY 4.0), a larger stitch-heavy project with seeded runtime randomness.
+
+See [the corpus provenance record](corpus/authored-v1/README.md), machine-readable [manifest](corpus/authored-v1/manifest.json), and [third-party notices](THIRD_PARTY_NOTICES.md). Every load verifies source, license, and compiled-artifact digests. Authored projects use official `inklecate` 1.2.1 `-c` output in the same `inkjs` runtime used by the internal searchers; this cleanly separates compiler compatibility from search behavior.
+
 ## Strategy contract
 
 InkBench owns the story and measurement. Internal strategies receive the same observation:
 
 - current location, output, tags, and legal choices;
-- global variables and generated-knot visit counts;
+- global variables and declared-location visit counts;
 - terminal, warning, error, and already-observable bug events;
 - semantic coverage deltas; and
 - opaque handles for checkpoints they have already reached.
@@ -123,6 +145,17 @@ You can also use a checked configuration:
 inkbench experiment --config examples/quick-experiment.json --out artifacts/configured
 ```
 
+Authored-project experiments use a separate command and report format:
+
+```sh
+inkbench corpus list
+inkbench corpus run --story the-intercept --algorithm coverage --budget 1000
+inkbench corpus experiment --preset smoke --out artifacts/corpus-smoke
+inkbench corpus experiment --config examples/authored-smoke.json --out artifacts/corpus-configured
+```
+
+The authored summary reports empirical coverage and paired exclusive locations/edges. Its raw runs carry `benchmarkTier: "authored-project"`, an empty `plantedBugIds` array, item-level coverage hashes, and reproducible runtime-warning/error paths. Add `--inkcheck-command` to either corpus command to exercise the real InkCheck adapter; InkCheck retains its native state unit and unavailable item-level metrics remain `null`.
+
 ## Reading results honestly
 
 - Compare planted-bug probability at a fixed budget, not only aggregate state counts.
@@ -132,10 +165,13 @@ inkbench experiment --config examples/quick-experiment.json --out artifacts/conf
 - Separate transition efficiency from wall/CPU efficiency.
 - Freeze held-out fixture seeds before tuning an algorithm.
 - Keep failed/unavailable cells in the raw dataset.
+- Never convert authored-project coverage into planted-bug yield or survival data.
 
-The v0.1 oracle is an explicit generated global set only when the planted defect is reached. The next measurement-validity milestone adds several defect classes, official `inklecate` cross-runtime replay, exhaustive denominators for small fixtures, root-replay budget regimes, and stronger statistical intervals. See [methodology](docs/methodology.md) and [milestones](docs/milestones.md).
+The v0.1 generated-fixture oracle is an explicit global set only when the planted defect is reached. Authored projects already use pinned official `inklecate` artifacts; the next measurement-validity milestone adds official replay of generated witnesses, several defect classes, exhaustive denominators for small fixtures, root-replay budget regimes, and stronger statistical intervals. See [methodology](docs/methodology.md) and [milestones](docs/milestones.md).
 
 The checked [v0.1 development matrix](docs/v0.1-development-results.md) is deliberately candid: the current minimal swarm produced no exclusive discovery in 792 small development cells and was weaker than the simple controls in several families. It is a forcing function for the next experiments, not a promotional benchmark result.
+
+The separate [v0.1 authored-project smoke](docs/v0.1-authored-smoke-results.md) verifies all three real stories across the four internal strategies and records initial coverage complementarity, with an explicit one-seed/no-claims caveat.
 
 ## Why InkBench and InkSwarm are separate
 
@@ -153,4 +189,4 @@ npm run smoke
 
 Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md); benchmark neutrality, deterministic replay, raw evidence, and measured regressions are part of the product contract.
 
-MIT licensed.
+InkBench code is MIT licensed. Authored corpus works retain the licenses recorded in [third-party notices](THIRD_PARTY_NOTICES.md).

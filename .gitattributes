@@ -1,0 +1,2 @@
+# Preserve upstream-authored whitespace exactly; corpus digests enforce integrity.
+corpus/authored-v1/** -whitespace

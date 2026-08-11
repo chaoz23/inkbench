@@ -1,7 +1,7 @@
 {
   "name": "@chaoz23/inkbench",
   "version": "0.1.0",
-  "description": "Neutral, reproducible benchmarks for bug-finding search strategies in Ink stories.",
+  "description": "Neutral, reproducible planted-bug and real-story benchmarks for Ink search strategies.",
   "type": "module",
   "bin": {
     "inkbench": "dist/cli.js"
@@ -12,10 +12,12 @@
   "files": [
     "dist",
     "docs",
+    "corpus",
     "examples",
     "schemas",
     "README.md",
     "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md",
     "LICENSE"
   ],
   "scripts": {
@@ -24,7 +26,8 @@
     "test": "npm run build && node --test",
     "smoke": "node dist/cli.js run --family shallow-obvious --algorithm random --fixture-seed 1 --search-seed 1 --budget 50 --json",
     "experiment:quick": "node dist/cli.js experiment --preset quick --out artifacts/quick",
-    "experiment:development": "node dist/cli.js experiment --preset development --out artifacts/development"
+    "experiment:development": "node dist/cli.js experiment --preset development --out artifacts/development",
+    "corpus:smoke": "node dist/cli.js corpus experiment --preset smoke --out artifacts/corpus-smoke"
   },
   "keywords": [
     "ink",

@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { hash } from "../core/hash.js";
+import { fixtureSourceHash, hash } from "../core/hash.js";
 import { SCHEMA_VERSION, type BugDiscovery, type RunReport, type RunRequest } from "../core/types.js";
 
 interface InkCheckEnding {
@@ -21,13 +21,23 @@ interface InkCheckReport {
   };
 }
 
+function scratchPath(root: string, requested: string): string {
+  const target = resolve(root, requested);
+  const fromRoot = relative(root, target);
+  if (fromRoot === "" || fromRoot.startsWith("..") || isAbsolute(fromRoot)) {
+    throw new Error(`unsafe fixture source path: ${requested}`);
+  }
+  return target;
+}
+
 function unavailable(request: RunRequest, runId: string, wallMs: number, message: string): RunReport {
   return {
     schemaVersion: SCHEMA_VERSION,
     runId,
     fixtureId: request.fixture.manifest.fixtureId,
     fixtureGeneratorVersion: request.fixture.manifest.generatorVersion,
-    fixtureSourceSha256: hash(request.fixture.source, 64),
+    fixtureSourceSha256: fixtureSourceHash(request.fixture),
+    benchmarkTier: request.fixture.tier,
     family: request.fixture.manifest.family,
     algorithm: "inkcheck",
     algorithmVersion: "unavailable",
@@ -39,7 +49,9 @@ function unavailable(request: RunRequest, runId: string, wallMs: number, message
     budget: { unit: "inkcheck-states", limit: request.budget },
     counts: { transitions: 0, launches: 0, rootLaunches: 0, episodesCompleted: 0 },
     coverage: null,
+    coverageItems: null,
     discoveredBugs: [],
+    runtimeFindings: [],
     plantedBugIds: request.fixture.manifest.bugs.map((bug) => bug.id),
     timing: { wallMs, cpuMs: null },
     runtime: { engine: "inkcheck", engineVersion: "unavailable", node: process.version, platform: `${process.platform}-${process.arch}` },
@@ -53,7 +65,7 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
   const runId = hash({
     fixtureId: request.fixture.manifest.fixtureId,
     generatorVersion: request.fixture.manifest.generatorVersion,
-    fixtureSourceSha256: hash(request.fixture.source, 64),
+    fixtureSourceSha256: fixtureSourceHash(request.fixture),
     algorithm: "inkcheck",
     searchSeed: request.searchSeed,
     storySeed: request.storySeed,
@@ -62,8 +74,18 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
   const started = performance.now();
   const scratch = mkdtempSync(join(tmpdir(), "inkbench-inkcheck-"));
   try {
-    const storyPath = join(scratch, `${request.fixture.manifest.fixtureId}.ink`);
-    writeFileSync(storyPath, request.fixture.source, "utf8");
+    const entrypoint = request.fixture.tier === "authored-project"
+      ? request.fixture.sourceBundle.entrypoint
+      : `${request.fixture.manifest.fixtureId}.ink`;
+    if (request.fixture.tier === "authored-project") {
+      for (const [relativePath, contents] of Object.entries(request.fixture.sourceBundle.files)) {
+        const target = scratchPath(scratch, relativePath);
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, contents, "utf8");
+      }
+    }
+    const storyPath = scratchPath(scratch, entrypoint);
+    if (request.fixture.tier === "generated-planted") writeFileSync(storyPath, request.fixture.source, "utf8");
     const configured = request.inkcheckCommand ?? "inkcheck";
     const isJavaScript = configured.endsWith(".js");
     const executable = isJavaScript ? process.execPath : configured;
@@ -113,7 +135,8 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
       runId,
       fixtureId: request.fixture.manifest.fixtureId,
       fixtureGeneratorVersion: request.fixture.manifest.generatorVersion,
-      fixtureSourceSha256: hash(request.fixture.source, 64),
+      fixtureSourceSha256: fixtureSourceHash(request.fixture),
+      benchmarkTier: request.fixture.tier,
       family: request.fixture.manifest.family,
       algorithm: "inkcheck",
       algorithmVersion: parsed.inkcheckVersion ?? "unknown",
@@ -130,7 +153,9 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
         episodesCompleted: endings.length,
       },
       coverage: null,
+      coverageItems: null,
       discoveredBugs: discoveries,
+      runtimeFindings: [],
       plantedBugIds: request.fixture.manifest.bugs.map((bug) => bug.id),
       timing: { wallMs, cpuMs: null },
       runtime: {

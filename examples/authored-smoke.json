@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "storyIds": [
+    "dog-ink-adventure",
+    "the-intercept",
+    "heresy2"
+  ],
+  "algorithms": [
+    "random",
+    "systematic",
+    "coverage",
+    "swarm"
+  ],
+  "searchSeeds": [1],
+  "budgets": [100],
+  "storySeed": 1
+}
