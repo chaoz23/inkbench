@@ -37,7 +37,7 @@ function probabilityCells(runs: RunReport[]): ProbabilityCell[] {
         .filter((run) => run.discoveryTimingBasis === "global-work")
         .map((run) => run.discoveredBugs[0]!.transition)),
       medianElapsedMsToDiscovery: median(discovered
-        .filter((run) => run.discoveryTimingBasis === "global-work")
+        .filter((run) => run.discoveryTimingBasis !== "final-only")
         .map((run) => run.discoveredBugs[0]!.elapsedMs)),
       meanWallMs: mean(values.map((run) => run.timing.wallMs)),
       meanCpuMs: cpuValues.length === 0 ? null : mean(cpuValues),
@@ -47,7 +47,7 @@ function probabilityCells(runs: RunReport[]): ProbabilityCell[] {
 
 function survivalTimeCells(runs: RunReport[]): SurvivalTimePoint[] {
   const groups = new Map<string, RunReport[]>();
-  for (const run of runs.filter((candidate) => candidate.status === "completed" && candidate.discoveryTimingBasis === "global-work")) {
+  for (const run of runs.filter((candidate) => candidate.status === "completed" && candidate.discoveryTimingBasis !== "final-only")) {
     const values = groups.get(groupKey(run)) ?? [];
     values.push(run);
     groups.set(groupKey(run), values);

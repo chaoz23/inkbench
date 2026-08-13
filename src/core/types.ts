@@ -398,8 +398,8 @@ export interface RunReport {
   discoveredBugs: BugDiscovery[];
   runtimeFindings: RuntimeFinding[];
   plantedBugIds: string[];
-  /** Whether discovery positions are globally comparable or only known by the final report. */
-  discoveryTimingBasis: "global-work" | "final-only";
+  /** Whether discovery positions are globally comparable by work, wall time, or only known at final report. */
+  discoveryTimingBasis: "global-work" | "global-wall" | "final-only";
   timing: RunTiming;
   parallelism: {
     requested: number | "auto" | null;

@@ -55,7 +55,8 @@ Done.
     budget: 10,
   });
   assert.ok(!neutral.includes("ib_bug"));
-  assert.match(neutral, /inkbench_oracle_sink = inkbench_oracle_sink/);
+  assert.match(neutral, /# INKBENCH_SIGNAL_MODE/);
+  assert.match(neutral, /# INKBENCH_SIGNAL:0/);
 });
 
 test("snapshot ownership charges retained frontiers instead of retaining every transition", () => {
@@ -155,17 +156,14 @@ for (const [flag, value] of expected) {
   const index = args.indexOf(flag);
   if (index < 0 || args[index + 1] !== value) process.exit(2);
 }
-if (!args.includes("--progress=off")) process.exit(2);
-process.stdout.write(JSON.stringify({
-  inkcheckVersion: "test",
-  compile: { success: true },
-  explore: {
-    statesExplored: 77,
-    endingsFound: [{ choiceIndices: [2], path: ["Obvious option 3"], firstDiscoveredAtState: 5 }],
-    exhaustive: false,
-    truncatedBy: { maxStates: false, memory: true, time: false }
-  }
-}, null, 2));
+if (!args.includes("--progress=off") || !args.includes("--json-stream")) process.exit(2);
+if (!process.env.NODE_OPTIONS?.includes("--max-old-space-size=120")) process.exit(2);
+const events = [
+  { schemaVersion: 1, type: "run_start", inkcheckVersion: "test", effectiveConfiguration: { concurrency: 1, concurrencyMode: "fixed" } },
+  { schemaVersion: 1, type: "benchmark_signal", signal: 0, elapsedMs: 17, firstDiscoveredAtState: 5, choiceIndices: [2] },
+  { schemaVersion: 1, type: "run_end", inkcheckVersion: "test", compile: { success: true }, effectiveConfiguration: { concurrency: 1, concurrencyMode: "fixed" }, explore: { statesExplored: 77, endingsFound: 1, runtimeErrors: 0, exhaustive: false, truncatedBy: { maxStates: false, memory: true, time: false } } }
+];
+for (const event of events) process.stdout.write(JSON.stringify(event) + "\\n");
 `, "utf8");
     const report = runBenchmark({
       fixture: generateFixture("shallow-obvious", 1, 1),
@@ -180,10 +178,39 @@ process.stdout.write(JSON.stringify({
     assert.equal(report.stopReason, "memory");
     assert.equal(report.counts.transitions, 77);
     assert.equal(report.discoveredBugs.length, 1);
-    assert.equal(report.discoveryTimingBasis, "final-only");
+    assert.equal(report.discoveryTimingBasis, "global-wall");
+    assert.equal(report.discoveredBugs[0].elapsedMs, 17);
     assert.equal(report.parallelism.requested, 1);
-    assert.match(report.notes.join("\n"), /Stream-parsed 1 ending paths/);
+    assert.match(report.notes.join("\n"), /Stream-parsed 1 replay witnesses/);
+    assert.match(report.notes.join("\n"), /bounded NDJSON evidence stream/);
+    assert.match(report.notes.join("\n"), /120 MiB V8 old-space envelope/);
     assert.equal(report.resources, null);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("InkCheck adapter distinguishes a launched CLI failure from an unavailable adapter", () => {
+  const directory = mkdtempSync(join(tmpdir(), "inkbench-inkcheck-runtime-error-"));
+  const command = join(directory, "mock-inkcheck.js");
+  try {
+    writeFileSync(command, `
+process.stderr.write("RangeError: Invalid string length\\n");
+process.exit(2);
+`, "utf8");
+    const report = runBenchmark({
+      fixture: generateFixture("shallow-obvious", 1, 1),
+      algorithm: "inkcheck",
+      searchSeed: 1,
+      storySeed: 1,
+      budget: 123,
+      inkcheckCommand: command,
+      resources: { maxMemoryMb: 96 },
+    });
+    assert.equal(report.status, "runtime-error");
+    assert.equal(report.stopReason, "error");
+    assert.match(report.error, /Invalid string length/);
+    assert.match(report.notes.join("\n"), /external-process failure evidence/);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

@@ -1,4 +1,5 @@
-import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { StringDecoder } from "node:string_decoder";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -14,6 +15,7 @@ interface InkCheckEnding {
   choiceIndices?: number[];
   path?: string[];
   firstDiscoveredAtState?: number;
+  elapsedMs?: number;
   variables?: Record<string, unknown>;
 }
 
@@ -21,6 +23,7 @@ interface InkCheckReport {
   inkcheckVersion?: string;
   effectiveConfiguration?: { concurrency?: number; concurrencyMode?: string };
   compile?: { success?: boolean };
+  resources?: { peakMemoryBytes?: number; memoryCapBytes?: number; memorySearchLimitBytes?: number };
   explore?: {
     statesExplored?: number;
     endingsFound?: InkCheckEnding[];
@@ -35,24 +38,48 @@ interface InkCheckReport {
   };
 }
 
+interface InkCheckStreamEvent {
+  schemaVersion?: number;
+  type?: "run_start" | "ending" | "runtime_error" | "benchmark_signal" | "run_end";
+  inkcheckVersion?: string;
+  signal?: number;
+  elapsedMs?: number;
+  firstDiscoveredAtState?: number;
+  choiceIndices?: number[];
+  effectiveConfiguration?: InkCheckReport["effectiveConfiguration"];
+  compile?: InkCheckReport["compile"];
+  resources?: InkCheckReport["resources"];
+  explore?: Omit<NonNullable<InkCheckReport["explore"]>, "endingsFound"> & {
+    endingsFound?: number;
+    runtimeErrors?: number;
+  };
+}
+
 function escaped(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Remove private scoring markers while retaining line count and all story behavior. */
-export function oracleNeutralInkSource(source: string, request: RunRequest, declareSink = true): string {
+/** Remove private oracle state while retaining a search-invisible scoring tag. */
+export function oracleNeutralInkSource(source: string, request: RunRequest, declareSignalMode = true): string {
   const variables = request.fixture.manifest.bugs.map((bug) => escaped(bug.oracle.variable));
   if (variables.length === 0) return source;
   const names = variables.join("|");
   const declaration = new RegExp(`^\\s*VAR\\s+(?:${names})\\b`);
-  const assignment = new RegExp(`^(\\s*)~\\s*(?:${names})\\s*=`);
+  const assignment = new RegExp(`^(\\s*)~\\s*(${names})\\s*=\\s*(.*?)\\s*$`);
   const markerTag = /^\s*#\s*INKBENCH_BUG:/;
+  const signalByVariable = new Map(request.fixture.manifest.bugs.map((bug, index) => [bug.oracle.variable, { index, value: bug.oracle.value }]));
   const neutral = source.split("\n").map((line) => {
     if (declaration.test(line) || markerTag.test(line)) return "// InkBench oracle marker removed from search input";
     const assigned = assignment.exec(line);
-    return assigned ? `${assigned[1]}~ inkbench_oracle_sink = inkbench_oracle_sink` : line;
+    if (!assigned) return line;
+    const signal = signalByVariable.get(assigned[2]!);
+    const rhs = assigned[3]!.replace(/\/\/.*$/, "").trim();
+    const expected = signal?.value === true ? "true" : signal?.value === false ? "false" : String(signal?.value);
+    return signal && rhs.toLowerCase() === expected.toLowerCase()
+      ? `${assigned[1]}# INKBENCH_SIGNAL:${signal.index}`
+      : `${assigned[1]}// InkBench oracle assignment removed from search input`;
   }).join("\n");
-  return declareSink ? `VAR inkbench_oracle_sink = false\n${neutral}` : neutral;
+  return declareSignalMode ? `# INKBENCH_SIGNAL_MODE\n${neutral}` : neutral;
 }
 
 interface ReplayResult {
@@ -113,8 +140,8 @@ class OrderedEndingReplayer {
         if (value !== bug.oracle.value) continue;
         this.discoveries.set(bug.id, {
           bugId: bug.id,
-          transition: 0,
-          elapsedMs: 0,
+          transition: ending.firstDiscoveredAtState ?? 0,
+          elapsedMs: ending.elapsedMs ?? 0,
           cpuMs: null,
           choicePath: path.slice(0, depth + 1),
           choiceTextPath: [...choiceTextPath],
@@ -155,13 +182,84 @@ function *readLines(path: string): Generator<string> {
   }
 }
 
-function parseInkCheckReport(path: string, request: RunRequest): { parsed: InkCheckReport; replay: ReplayResult } {
+function parseInkCheckReport(path: string, request: RunRequest): {
+  parsed: InkCheckReport;
+  replay: ReplayResult;
+  transport: "bounded-stream" | "full-json";
+} {
   const replayer = new OrderedEndingReplayer(request);
+  const lines = readLines(path);
+  const first = lines.next();
+  if (first.done) throw new SyntaxError("InkCheck report was empty");
+  let firstEvent: InkCheckStreamEvent | undefined;
+  try {
+    firstEvent = JSON.parse(first.value) as InkCheckStreamEvent;
+  } catch {
+    firstEvent = undefined;
+  }
+  if (firstEvent?.type === "run_start") {
+    let terminal: InkCheckStreamEvent | undefined;
+    const consume = (event: InkCheckStreamEvent) => {
+      if (event.schemaVersion !== 1) throw new SyntaxError(`unsupported InkCheck stream schema ${event.schemaVersion ?? "missing"}`);
+      if (event.type === "ending") {
+        replayer.replay({
+          ...(event.choiceIndices === undefined ? {} : { choiceIndices: event.choiceIndices }),
+          ...(event.firstDiscoveredAtState === undefined ? {} : { firstDiscoveredAtState: event.firstDiscoveredAtState }),
+          ...(event.elapsedMs === undefined ? {} : { elapsedMs: event.elapsedMs }),
+        });
+      } else if (event.type === "benchmark_signal") {
+        if (!Number.isSafeInteger(event.signal) || event.signal! < 0 || event.signal! >= request.fixture.manifest.bugs.length) {
+          throw new SyntaxError(`invalid InkBench signal ${String(event.signal)}`);
+        }
+        replayer.replay({
+          ...(event.choiceIndices === undefined ? {} : { choiceIndices: event.choiceIndices }),
+          ...(event.firstDiscoveredAtState === undefined ? {} : { firstDiscoveredAtState: event.firstDiscoveredAtState }),
+          ...(event.elapsedMs === undefined ? {} : { elapsedMs: event.elapsedMs }),
+        });
+      } else if (event.type === "run_end") {
+        terminal = event;
+      }
+    };
+    consume(firstEvent);
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      consume(JSON.parse(line) as InkCheckStreamEvent);
+    }
+    if (!terminal) throw new SyntaxError("InkCheck evidence stream ended without run_end");
+    const final = terminal as InkCheckStreamEvent;
+    const explore = final.explore;
+    const parsed: InkCheckReport = {};
+    const inkcheckVersion = final.inkcheckVersion ?? firstEvent.inkcheckVersion;
+    const effectiveConfiguration = final.effectiveConfiguration ?? firstEvent.effectiveConfiguration;
+    if (inkcheckVersion !== undefined) parsed.inkcheckVersion = inkcheckVersion;
+    if (effectiveConfiguration !== undefined) parsed.effectiveConfiguration = effectiveConfiguration;
+    if (final.compile !== undefined) parsed.compile = final.compile;
+    if (final.resources !== undefined) parsed.resources = final.resources;
+    if (explore) {
+      parsed.explore = {
+        ...(explore.statesExplored === undefined ? {} : { statesExplored: explore.statesExplored }),
+        endingsFound: [],
+        ...(explore.limits === undefined ? {} : { limits: explore.limits }),
+        ...(explore.exhaustive === undefined ? {} : { exhaustive: explore.exhaustive }),
+        ...(explore.execution === undefined ? {} : { execution: explore.execution }),
+        ...(explore.truncatedBy === undefined ? {} : { truncatedBy: explore.truncatedBy }),
+      };
+    }
+    return {
+      parsed,
+      replay: replayer.result(),
+      transport: "bounded-stream",
+    };
+  }
   const sanitized: string[] = [];
   let inEndings = false;
   let endingLines: string[] | null = null;
   let streamed = false;
-  for (const line of readLines(path)) {
+  const legacyLines = (function *(): Generator<string> {
+    yield first.value;
+    yield *lines;
+  })();
+  for (const line of legacyLines) {
     if (!inEndings && /^    "endingsFound": \[$/.test(line)) {
       sanitized.push('    "endingsFound": [],');
       inEndings = true;
@@ -185,12 +283,17 @@ function parseInkCheckReport(path: string, request: RunRequest): { parsed: InkCh
     sanitized.push(line);
   }
   if (inEndings || endingLines !== null) throw new SyntaxError("InkCheck report ended inside endingsFound");
-  if (streamed) return { parsed: JSON.parse(sanitized.join("\n")) as InkCheckReport, replay: replayer.result() };
+  if (streamed) return { parsed: JSON.parse(sanitized.join("\n")) as InkCheckReport, replay: replayer.result(), transport: "full-json" };
   const bytes = statSync(path).size;
   if (bytes > 16 * 1024 * 1024) throw new RangeError("InkCheck emitted an unrecognized large JSON report layout");
   const parsed = JSON.parse(readFileSync(path, "utf8")) as InkCheckReport;
   for (const ending of parsed.explore?.endingsFound ?? []) replayer.replay(ending);
-  return { parsed, replay: replayer.result() };
+  return { parsed, replay: replayer.result(), transport: "full-json" };
+}
+
+function commandSha256(command: string): string | undefined {
+  if (!existsSync(command)) return undefined;
+  return createHash("sha256").update(readFileSync(command)).digest("hex");
 }
 
 function scratchPath(root: string, requested: string): string {
@@ -202,7 +305,13 @@ function scratchPath(root: string, requested: string): string {
   return target;
 }
 
-function unavailable(request: RunRequest, runId: string, wallMs: number, message: string): RunReport {
+function failedAdapterRun(
+  request: RunRequest,
+  runId: string,
+  wallMs: number,
+  message: string,
+  status: "adapter-unavailable" | "runtime-error",
+): RunReport {
   const primaryBudget = request.timeBudgetMs === undefined
     ? { unit: "inkcheck-states" as const, limit: request.budget }
     : { unit: "wall-ms" as const, limit: request.timeBudgetMs };
@@ -215,7 +324,7 @@ function unavailable(request: RunRequest, runId: string, wallMs: number, message
     benchmarkTier: request.fixture.tier,
     family: request.fixture.manifest.family,
     algorithm: "inkcheck",
-    algorithmVersion: "unavailable",
+    algorithmVersion: status === "adapter-unavailable" ? "unavailable" : "unknown",
     fixtureSeed: request.fixture.manifest.seed,
     searchSeed: request.searchSeed,
     storySeed: request.storySeed,
@@ -231,13 +340,33 @@ function unavailable(request: RunRequest, runId: string, wallMs: number, message
     plantedBugIds: request.fixture.manifest.bugs.map((bug) => bug.id),
     discoveryTimingBasis: "final-only",
     timing: { wallMs, cpuMs: null },
-    parallelism: { requested: request.inkcheckOptions === undefined ? 1 : request.inkcheckOptions.concurrency ?? "auto", effective: null, mode: "unavailable" },
+    parallelism: { requested: request.inkcheckOptions === undefined ? 1 : request.inkcheckOptions.concurrency ?? "auto", effective: null, mode: status === "adapter-unavailable" ? "unavailable" : "external-process-failed" },
     stopReason: "error",
     resources: null,
-    runtime: { harnessVersion: INKBENCH_VERSION, runContractVersion: RUN_CONTRACT_VERSION, engine: "inkcheck", engineVersion: "unavailable", node: process.version, platform: `${process.platform}-${process.arch}` },
-    status: "adapter-unavailable",
+    runtime: { harnessVersion: INKBENCH_VERSION, runContractVersion: RUN_CONTRACT_VERSION, engine: "inkcheck", engineVersion: status === "adapter-unavailable" ? "unavailable" : "unknown", node: process.version, platform: `${process.platform}-${process.arch}` },
+    status,
     error: message,
-    notes: ["Install InkCheck or pass --inkcheck-command. Missing adapter metrics are null, not zero."],
+    notes: status === "adapter-unavailable"
+      ? ["Install InkCheck or pass --inkcheck-command. Missing adapter metrics are null, not zero."]
+      : ["InkCheck started but did not produce a parseable final report. This is explicit external-process failure evidence, not a zero-discovery result."],
+  };
+}
+
+function childNodeOptions(memoryCapMb: number | undefined): { env?: NodeJS.ProcessEnv; heapLimitMb?: number } {
+  if (memoryCapMb === undefined) return {};
+  // Match the isolated InkBench worker envelope: the cooperative watermark is
+  // 80% of V8 old space, leaving room to serialize a final partial report.
+  const heapLimitMb = Math.ceil(memoryCapMb / 0.8);
+  const inherited = process.env.NODE_OPTIONS ?? "";
+  const withoutOldSpace = inherited
+    .replace(/(?:^|\s)--max-old-space-size(?:=\S+|\s+\S+)/g, " ")
+    .trim();
+  return {
+    heapLimitMb,
+    env: {
+      ...process.env,
+      NODE_OPTIONS: [withoutOldSpace, `--max-old-space-size=${heapLimitMb}`].filter(Boolean).join(" "),
+    },
   };
 }
 
@@ -280,7 +409,7 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
     const args = [
       ...(isJavaScript ? [configured] : []),
       storyPath,
-      "--json",
+      "--json-stream",
       "--max-states",
       String(request.budget),
       ...(inkcheckOptions.maxDepth === undefined ? [] : ["--max-depth", String(inkcheckOptions.maxDepth)]),
@@ -300,13 +429,18 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
         ? []
         : ["--max-time", String(effectiveTimeSeconds)]),
     ];
-    const stdoutPath = join(scratch, "inkcheck-report.json");
+    const stdoutPath = join(scratch, "inkcheck-evidence.ndjson");
     const stderrPath = join(scratch, "inkcheck-stderr.txt");
     const stdoutFd = openSync(stdoutPath, "w");
     const stderrFd = openSync(stderrPath, "w");
+    const childRuntime = childNodeOptions(request.resources?.maxMemoryMb);
     let child: ReturnType<typeof spawnSync>;
     try {
-      child = spawnSync(executable, args, { stdio: ["ignore", stdoutFd, stderrFd] });
+      child = spawnSync(executable, args, {
+        stdio: ["ignore", stdoutFd, stderrFd],
+        ...(childRuntime.env ? { env: childRuntime.env } : {}),
+        ...(effectiveTimeMs === undefined ? {} : { timeout: effectiveTimeMs + 5_000, killSignal: "SIGKILL" as const }),
+      });
     } finally {
       closeSync(stdoutFd);
       closeSync(stderrFd);
@@ -314,15 +448,18 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
     const stderr = readFileSync(stderrPath, "utf8");
     const reportBytes = statSync(stdoutPath).size;
     const childWallMs = performance.now() - started;
-    if (child.error) return unavailable(request, runId, childWallMs, child.error.message);
+    if (child.error && (child.error as NodeJS.ErrnoException).code === "ENOENT") {
+      return failedAdapterRun(request, runId, childWallMs, child.error.message, "adapter-unavailable");
+    }
     let parsed: InkCheckReport;
     let replay: ReplayResult;
+    let transport: "bounded-stream" | "full-json";
     try {
-      ({ parsed, replay } = parseInkCheckReport(stdoutPath, request));
+      ({ parsed, replay, transport } = parseInkCheckReport(stdoutPath, request));
     } catch (error) {
       const parseError = error instanceof Error ? error.message : String(error);
-      const detail = stderr.trim() || parseError || `exit status ${child.status ?? "unknown"}`;
-      return unavailable(request, runId, childWallMs, `InkCheck returned no JSON report: ${detail.slice(0, 1_000)}`);
+      const detail = child.error?.message || stderr.trim() || parseError || `exit status ${child.status ?? "unknown"}`;
+      return failedAdapterRun(request, runId, childWallMs, `InkCheck returned no complete evidence report: ${detail.slice(0, 1_000)}`, "runtime-error");
     }
     const truncated = parsed.explore?.truncatedBy;
     const stopReason: ResourceStopReason = truncated?.memory
@@ -336,12 +473,16 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
     const compileFailed = parsed.compile?.success === false || parsed.explore === undefined;
     const processFailed = child.status !== 0 && child.status !== 1;
     const wallMs = performance.now() - started;
-    const discoveries: BugDiscovery[] = replay.discoveries.map((discovery) => ({
-      ...discovery,
-      transition: parsed.explore?.statesExplored ?? request.budget,
-      elapsedMs: wallMs,
-      cpuMs: null,
-    }));
+    const discoveries: BugDiscovery[] = replay.discoveries.map((discovery) => transport === "bounded-stream"
+      ? { ...discovery, cpuMs: null }
+      : {
+          ...discovery,
+          transition: parsed.explore?.statesExplored ?? request.budget,
+          elapsedMs: wallMs,
+          cpuMs: null,
+        });
+    const cliSha256 = commandSha256(configured);
+    const engineVersion = `${parsed.inkcheckVersion ?? "unknown"}${cliSha256 ? `+cli.${cliSha256.slice(0, 12)}` : ""}`;
     return {
       schemaVersion: RUN_REPORT_SCHEMA_VERSION,
       runId,
@@ -351,7 +492,7 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
       benchmarkTier: request.fixture.tier,
       family: request.fixture.manifest.family,
       algorithm: "inkcheck",
-      algorithmVersion: parsed.inkcheckVersion ?? "unknown",
+      algorithmVersion: engineVersion,
       fixtureSeed: request.fixture.manifest.seed,
       searchSeed: request.searchSeed,
       storySeed: request.storySeed,
@@ -370,7 +511,7 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
       discoveredBugs: discoveries,
       runtimeFindings: [],
       plantedBugIds: request.fixture.manifest.bugs.map((bug) => bug.id),
-      discoveryTimingBasis: "final-only",
+      discoveryTimingBasis: transport === "bounded-stream" ? "global-wall" : "final-only",
       timing: { wallMs, cpuMs: null },
       parallelism: {
         requested: inkcheckOptions.concurrency ?? "auto",
@@ -383,7 +524,7 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
         harnessVersion: INKBENCH_VERSION,
         runContractVersion: RUN_CONTRACT_VERSION,
         engine: "inkcheck",
-        engineVersion: parsed.inkcheckVersion ?? "unknown",
+        engineVersion,
         node: process.version,
         platform: `${process.platform}-${process.arch}`,
       },
@@ -391,16 +532,21 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
       error: compileFailed || processFailed ? stderr.trim().slice(0, 1_000) || "InkCheck did not produce exploration evidence" : null,
       notes: [
         `Invoked real InkCheck CLI via ${basename(configured)} with its native state budget.`,
-        "Streamed InkCheck stdout/stderr to scratch files before parsing so large final reports do not hit a child-process capture buffer.",
-        `InkCheck final JSON report size was ${reportBytes} bytes.`,
-        `Stream-parsed ${replay.paths} ending paths and replayed ${replay.transitions} unique ordered-prefix transitions (${replay.divergences} path divergences).`,
-        "Removed planted-oracle declarations, assignments, and marker tags from InkCheck's search input; scored returned ending paths by replay against the pinned instrumented artifact.",
+        "Streamed InkCheck stdout/stderr to scratch files before parsing so large evidence does not hit a child-process capture buffer.",
+        `InkCheck ${transport === "bounded-stream" ? "bounded NDJSON evidence stream" : "legacy full JSON report"} size was ${reportBytes} bytes.`,
+        `Stream-parsed ${replay.paths} replay witnesses and replayed ${replay.transitions} unique ordered-prefix transitions (${replay.divergences} path divergences).`,
+        ...(cliSha256 ? [`Pinned InkCheck CLI artifact SHA-256 ${cliSha256}.`] : []),
+        "Removed planted-oracle variables and assignments from InkCheck's search state; scored only reserved numeric signal paths by replay against the pinned instrumented artifact.",
         ...(adapterDefaults ? ["Used InkBench's default scientific adapter profile: one-core portfolio search, no repro minimization, and max depth 1,000."] : ["Used explicitly recorded InkCheck product/search options."]),
         ...(request.resources?.maxMemoryMb === undefined ? [] : [`Forwarded the ${request.resources.maxMemoryMb} MiB memory guard to InkCheck.`]),
+        ...(childRuntime.heapLimitMb === undefined ? [] : [`Launched InkCheck with a ${childRuntime.heapLimitMb} MiB V8 old-space envelope so its ${request.resources!.maxMemoryMb} MiB cooperative guard can stop before an uncatchable heap abort.`]),
         ...(request.timeBudgetMs === undefined ? [] : [`Forwarded the planned ${Math.max(1, Math.ceil(request.timeBudgetMs / 1_000))} second wall-time budget to InkCheck.`]),
         ...(request.resources?.maxTimeMs === undefined ? [] : [`Forwarded a ${Math.max(1, Math.ceil(request.resources.maxTimeMs / 1_000))} second emergency time guard to InkCheck.`]),
+        ...(parsed.resources?.peakMemoryBytes === undefined ? [] : [`InkCheck reported ${(parsed.resources.peakMemoryBytes / 1_048_576).toFixed(1)} MiB peak sampled heap against a ${((parsed.resources.memorySearchLimitBytes ?? parsed.resources.memoryCapBytes ?? 0) / 1_048_576).toFixed(0)} MiB search watermark.`]),
         "InkCheck states and InkBench choice transitions are adjacent but not identical work units; compare wall time and detection, and keep unit labels visible.",
-        "InkCheck portfolio finding positions are pass-local, so discovery timing is final-only and must not enter survival curves.",
+        ...(transport === "bounded-stream"
+          ? ["Used InkCheck's globally elapsed evidence timestamps for wall-time survival analysis; pass-local state positions remain excluded from work-unit survival curves."]
+          : ["InkCheck portfolio finding positions are pass-local, so discovery timing is final-only and must not enter survival curves."]),
         "InkCheck does not expose the full InkBench empirical edge/state metric set, so coverage is null.",
       ],
     };

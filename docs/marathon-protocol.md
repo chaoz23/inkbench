@@ -17,6 +17,7 @@ If important survival curves are still falling at 60 minutes, add longer tiers r
 - Primary budget: planned wall time.
 - Native ceiling: 100,000,000 choice transitions or InkCheck states. It is a safety ceiling and must not bind a valid timed cell.
 - Heap watermark: 4,096 MiB on the current 8 GiB machine.
+- External Node envelope: InkCheck receives a 5,120 MiB V8 old-space limit around that 4,096 MiB cooperative watermark, matching InkBench's 80%-of-old-space worker posture. `--max-memory` alone does not enlarge V8 old space.
 - Scheduling: one cell at a time. Do not co-schedule marathon matrices.
 - Parallelism: each internal algorithm uses one core. The primary InkCheck arm fixes `--concurrency 1`; reports retain InkCheck's requested/effective execution telemetry.
 - Planned time expiry: completed evidence.
@@ -31,9 +32,9 @@ The scientific discovery arm explicitly selects portfolio search, fixes concurre
 
 A separate product-default sensitivity arm records an empty `inkcheckOptions` object. It retains InkCheck's automatic concurrency, default portfolio, repro minimization, and depth 100. Do not pool this arm with the primary comparison; judge it using actual wall time and recorded effective parallelism.
 
-InkBench removes planted oracle declarations, assignments, and marker tags from InkCheck's search input. Returned ending paths are replayed against the pinned instrumented fixture to score bugs. Internal observations likewise omit bug events and bug IDs, and novelty keys exclude oracle globals.
+InkBench removes planted oracle declarations, assignments, and marker tags from InkCheck's search state. A triggering assignment becomes a reserved numeric runtime tag that InkCheck does not use for state identity, novelty, allocation, or ending identity. Only signaled paths are replayed against the pinned instrumented fixture to score bugs; ordinary ending paths are not streamed in this mode. Internal observations likewise omit bug events and bug IDs, and novelty keys exclude oracle globals.
 
-InkCheck portfolio discovery positions are currently pass-local rather than portfolio-global. InkCheck contributes final bug yield and complementarity, but is excluded from time-to-discovery/survival estimates until a valid global timestamp is available.
+InkCheck portfolio state positions remain pass-local rather than portfolio-global. The corrected bounded evidence stream adds a process-global elapsed timestamp to every first-retained replay path, so InkCheck enters wall-time survival curves while remaining excluded from transition/state-unit survival curves.
 
 ## Benchmark strata
 
@@ -57,3 +58,5 @@ Promote when:
 - output can resume after interruption without duplicating completed run IDs.
 
 If a gate fails, change methodology and rerun 20 minutes. Do not tune InkSwarm mechanisms against held-out 60-minute outcomes.
+
+An InkCheck process that starts but does not finish its bounded evidence stream is recorded as `runtime-error`, not `adapter-unavailable` and not a zero-discovery result. The adapter uses InkCheck's opt-in `--json-stream` transport: replay paths are durable as they are retained, the terminal summary is bounded, and the CLI artifact SHA-256 is recorded. The wrapper enforces a five-second hard grace beyond the planned deadline; reaching that backstop is a failed cell, not clean time-budget evidence.

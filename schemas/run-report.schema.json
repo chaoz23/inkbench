@@ -58,7 +58,7 @@
     "discoveredBugs": { "type": "array", "items": { "type": "object" } },
     "runtimeFindings": { "type": "array", "items": { "type": "object" } },
     "plantedBugIds": { "type": "array", "items": { "type": "string" } },
-    "discoveryTimingBasis": { "enum": ["global-work", "final-only"] },
+    "discoveryTimingBasis": { "enum": ["global-work", "global-wall", "final-only"] },
     "timing": { "type": "object" },
     "parallelism": {
       "type": "object",

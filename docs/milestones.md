@@ -23,7 +23,7 @@
 - Frozen training/validation/blind-evaluation seed partitions and preregistration files.
 - Statistical intervals and paired significance/effect-size reporting.
 
-Implemented ahead of the remaining v0.2 items: first-class planned wall-time budgets, 20/60-minute marathon presets, oracle-neutral InkCheck replay scoring, final-only timing labels for InkCheck portfolio findings, and a lazy coverage-priority heap suitable for long runs.
+Implemented ahead of the remaining v0.2 items: first-class planned wall-time budgets, 20/60-minute marathon presets, oracle-neutral InkCheck replay scoring, globally elapsed InkCheck evidence timestamps with pass-local work labels, and a lazy coverage-priority heap suitable for long runs.
 
 ## v0.3.0 — corpus expansion and adapters
 
