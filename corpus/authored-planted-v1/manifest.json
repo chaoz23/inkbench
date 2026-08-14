@@ -1,0 +1,630 @@
+{
+  "schemaVersion": 1,
+  "tier": "authored-planted",
+  "corpusVersion": "authored-planted-v1",
+  "source": {
+    "cleanCorpusManifest": "corpus/authored-v1/manifest.json",
+    "cleanStoryId": "the-intercept",
+    "repository": "https://github.com/inkle/the-intercept",
+    "commit": "2a816b56e61ce4bf02bec1c638074645bdd871e3"
+  },
+  "cases": [
+    {
+      "id": "the-intercept-20",
+      "family": "choice-dense-authored-story",
+      "directory": "the-intercept-20",
+      "mutationSet": "intercept-diverse-20-v1",
+      "source": {
+        "name": "The Intercept — InkBench 20-bug derivative",
+        "author": "inkle Ltd.",
+        "license": "MIT",
+        "repository": "https://github.com/inkle/the-intercept",
+        "commit": "2a816b56e61ce4bf02bec1c638074645bdd871e3",
+        "licenseFile": "LICENSE-AND-PROVENANCE.md",
+        "licenseSha256": "49767dbeb224d3a585c3eb719844f1c9848d94fb07c10067a9259ed101954359",
+        "entrypoint": "TheIntercept20.ink",
+        "randomness": "none",
+        "compileSetup": "Compile the entrypoint with its four local phase includes.",
+        "structuralMeasures": {
+          "authoredLines": 1686,
+          "authoredBytes": 100539,
+          "compiledWords": 14728,
+          "knots": 32,
+          "stitches": 30,
+          "functions": 2,
+          "choices": 343,
+          "gathers": 95,
+          "diverts": 230
+        },
+        "upstreamSourceSha256": "1d7b5653b689a9da6801bbfaaa3fbd20b0cc47113b28bb1b1774f6cd11e9eea4",
+        "generator": "scripts/build-intercept-20.mjs"
+      },
+      "compiled": {
+        "file": "story.ink.json",
+        "sha256": "25d05f9706cd5e8559eef0e3c5154f1f8c24ab076a49ec55c80bd4da00425178",
+        "compiler": "inklecate",
+        "compilerVersion": "1.2.1",
+        "arguments": [
+          "-c",
+          "-o",
+          "story.ink.json",
+          "TheIntercept20.ink"
+        ],
+        "provenance": "Generated locally from the deterministic derivative with official inklecate 1.2.1 count-all-visits enabled."
+      },
+      "files": {
+        "TheIntercept20.ink": "849955b96f7e87f1d9c972dcd59e01c78337823b46049b65a5c122f29ad000c5",
+        "bugs/early.ink": "8693c22496873f87742fc7ce491b16716c004ce5df9eb8ad22b657b0a270208f",
+        "bugs/interrogation.ink": "44af057dd2c51b4f09d6a3373dc5b7571a9d4ff621ce20d9ad91802b37e434dd",
+        "bugs/escape.ink": "f8812174058c8732db587fd043a8b4e91461d0fd184f012773d899508fc86253",
+        "bugs/endgame.ink": "7fa0bdbc6348adc58a388c1976b05c382a6d232c9f206a02ad8000ba6c4eb81f"
+      },
+      "witnesses": {
+        "file": "witnesses.json",
+        "sha256": "c2129fedf93ec048c5d0aacc3b493cb92eba034222bc57bf4a618a91a86c629b"
+      },
+      "bugs": [
+        {
+          "id": "intercept-01-duplicate-wait",
+          "family": "shallow-obvious",
+          "faultType": "duplicate-choice",
+          "trigger": "Choose the second, accidentally duplicated Wait option in the opening plan.",
+          "effect": "The duplicate silently adds seven points of forcefulness before the interview.",
+          "description": "Choose the second, accidentally duplicated Wait option in the opening plan. The duplicate silently adds seven points of forcefulness before the interview.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_01",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/early.ink",
+            "knot": "start",
+            "upstreamLine": 102
+          },
+          "dimensions": {
+            "depth": 1,
+            "width": 2,
+            "stateDimensionality": 1,
+            "rarity": 1,
+            "delay": 0,
+            "revisit": 0,
+            "deception": 0,
+            "order": 0
+          }
+        },
+        {
+          "id": "intercept-02-teacup-component-alias",
+          "family": "shallow-obvious",
+          "faultType": "inventory-alias",
+          "trigger": "Take the first mug offered by Harris.",
+          "effect": "Acquiring the teacup also creates the stolen Bombe component in inventory.",
+          "description": "Take the first mug offered by Harris. Acquiring the teacup also creates the stolen Bombe component in inventory.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_02",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/early.ink",
+            "knot": "start.waited",
+            "upstreamLine": 120
+          },
+          "dimensions": {
+            "depth": 2,
+            "width": 1,
+            "stateDimensionality": 2,
+            "rarity": 1,
+            "delay": 0,
+            "revisit": 0,
+            "deception": 0,
+            "order": 0
+          }
+        },
+        {
+          "id": "intercept-03-calm-question-hidden",
+          "family": "rare-prefix",
+          "faultType": "missing-choice",
+          "trigger": "Reach Harris's first direct demand without being drugged.",
+          "effect": "The direct Yes answer is hidden by an inverted availability condition.",
+          "description": "Reach Harris's first direct demand without being drugged. The direct Yes answer is hidden by an inverted availability condition.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_03",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/early.ink",
+            "knot": "harris_demands_component",
+            "upstreamLine": 270
+          },
+          "dimensions": {
+            "depth": 5,
+            "width": 2,
+            "stateDimensionality": 1,
+            "rarity": 2,
+            "delay": 0,
+            "revisit": 0,
+            "deception": 1,
+            "order": 1
+          }
+        },
+        {
+          "id": "intercept-04-suspicion-sign-flip",
+          "family": "combination-lock",
+          "faultType": "numeric-sign-corruption",
+          "trigger": "Deny knowing where the component is at Harris's first demand.",
+          "effect": "The evasiveness score changes sign, reversing downstream personality gates.",
+          "description": "Deny knowing where the component is at Harris's first demand. The evasiveness score changes sign, reversing downstream personality gates.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_04",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/early.ink",
+            "knot": "harris_demands_component",
+            "upstreamLine": 273
+          },
+          "dimensions": {
+            "depth": 6,
+            "width": 2,
+            "stateDimensionality": 2,
+            "rarity": 2,
+            "delay": 2,
+            "revisit": 0,
+            "deception": 1,
+            "order": 1
+          }
+        },
+        {
+          "id": "intercept-05-evade-administers-drug",
+          "family": "order-dependent",
+          "faultType": "unrelated-side-effect",
+          "trigger": "Evade Harris's first direct demand for the component.",
+          "effect": "Merely evading marks the protagonist as drugged without drinking tea.",
+          "description": "Evade Harris's first direct demand for the component. Merely evading marks the protagonist as drugged without drinking tea.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_05",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/early.ink",
+            "knot": "harris_demands_component",
+            "upstreamLine": 280
+          },
+          "dimensions": {
+            "depth": 7,
+            "width": 2,
+            "stateDimensionality": 3,
+            "rarity": 2,
+            "delay": 2,
+            "revisit": 0,
+            "deception": 1,
+            "order": 2
+          }
+        },
+        {
+          "id": "intercept-06-drink-drops-cup",
+          "family": "delayed-consequence",
+          "faultType": "stale-state-reset",
+          "trigger": "Take and drink the tea at Harris's demand.",
+          "effect": "The cup flag is cleared immediately after drinking, contradicting the scene and later state.",
+          "description": "Take and drink the tea at Harris's demand. The cup flag is cleared immediately after drinking, contradicting the scene and later state.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_06",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/early.ink",
+            "knot": "harris_demands_component.drinkfromcup",
+            "upstreamLine": 310
+          },
+          "dimensions": {
+            "depth": 9,
+            "width": 2,
+            "stateDimensionality": 2,
+            "rarity": 2,
+            "delay": 3,
+            "revisit": 0,
+            "deception": 1,
+            "order": 1
+          }
+        },
+        {
+          "id": "intercept-07-blackmail-frames-hooper",
+          "family": "order-dependent",
+          "faultType": "cross-state-contamination",
+          "trigger": "Admit being open to blackmail.",
+          "effect": "A confession about blackmail also marks Hooper as already framed.",
+          "description": "Admit being open to blackmail. A confession about blackmail also marks Hooper as already framed.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_07",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/interrogation.ink",
+            "knot": "harris_presses_for_details.admit_open_to_pressure",
+            "upstreamLine": 371
+          },
+          "dimensions": {
+            "depth": 10,
+            "width": 2,
+            "stateDimensionality": 4,
+            "rarity": 3,
+            "delay": 4,
+            "revisit": 0,
+            "deception": 2,
+            "order": 2
+          }
+        },
+        {
+          "id": "intercept-08-blame-no-one-names-hooper",
+          "family": "shallow-obvious",
+          "faultType": "choice-effect-inversion",
+          "trigger": "Choose Blame no-one when asked for a theory.",
+          "effect": "The supposedly neutral answer records that Hooper was named.",
+          "description": "Choose Blame no-one when asked for a theory. The supposedly neutral answer records that Hooper was named.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_08",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/interrogation.ink",
+            "knot": "harris_asks_for_theory",
+            "upstreamLine": 419
+          },
+          "dimensions": {
+            "depth": 10,
+            "width": 2,
+            "stateDimensionality": 2,
+            "rarity": 2,
+            "delay": 2,
+            "revisit": 0,
+            "deception": 0,
+            "order": 1
+          }
+        },
+        {
+          "id": "intercept-09-lie-erases-blackmail",
+          "family": "delayed-consequence",
+          "faultType": "history-erasure",
+          "trigger": "Lie after earlier admitting vulnerability to blackmail.",
+          "effect": "The lie erases the earlier admission, altering later conditional dialogue.",
+          "description": "Lie after earlier admitting vulnerability to blackmail. The lie erases the earlier admission, altering later conditional dialogue.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_09",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/interrogation.ink",
+            "knot": "harris_has_seen_it_before",
+            "upstreamLine": 470
+          },
+          "dimensions": {
+            "depth": 12,
+            "width": 2,
+            "stateDimensionality": 3,
+            "rarity": 3,
+            "delay": 5,
+            "revisit": 0,
+            "deception": 2,
+            "order": 3
+          }
+        },
+        {
+          "id": "intercept-10-dissemble-skips-accusation",
+          "family": "rare-prefix",
+          "faultType": "wrong-divert",
+          "trigger": "Dissemble while not drugged.",
+          "effect": "The branch skips the Hooper accusation and jumps into the confession narrative.",
+          "description": "Dissemble while not drugged. The branch skips the Hooper accusation and jumps into the confession narrative.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_10",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/interrogation.ink",
+            "knot": "harris_demands_you_speak",
+            "upstreamLine": 494
+          },
+          "dimensions": {
+            "depth": 13,
+            "width": 2,
+            "stateDimensionality": 3,
+            "rarity": 3,
+            "delay": 1,
+            "revisit": 0,
+            "deception": 2,
+            "order": 2
+          }
+        },
+        {
+          "id": "intercept-11-lie-reapplies-drug",
+          "family": "combination-lock",
+          "faultType": "condition-bypass",
+          "trigger": "Reach the undrugged confession path and choose Lie.",
+          "effect": "The truth-serum state turns back on even though no drug is present.",
+          "description": "Reach the undrugged confession path and choose Lie. The truth-serum state turns back on even though no drug is present.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_11",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/interrogation.ink",
+            "knot": "i_met_a_young_man",
+            "upstreamLine": 536
+          },
+          "dimensions": {
+            "depth": 16,
+            "width": 3,
+            "stateDimensionality": 4,
+            "rarity": 4,
+            "delay": 3,
+            "revisit": 0,
+            "deception": 2,
+            "order": 3
+          }
+        },
+        {
+          "id": "intercept-12-denial-creates-component",
+          "family": "combination-lock",
+          "faultType": "impossible-inventory-state",
+          "trigger": "Claim not to have the component, then choose Lie.",
+          "effect": "The denial creates the component in inventory while dialogue says it is gone.",
+          "description": "Claim not to have the component, then choose Lie. The denial creates the component in inventory while dialogue says it is gone.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_12",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/interrogation.ink",
+            "knot": "i_met_a_young_man",
+            "upstreamLine": 562
+          },
+          "dimensions": {
+            "depth": 18,
+            "width": 2,
+            "stateDimensionality": 5,
+            "rarity": 4,
+            "delay": 2,
+            "revisit": 0,
+            "deception": 2,
+            "order": 3
+          }
+        },
+        {
+          "id": "intercept-13-hot-temper-prematurely-convicts",
+          "family": "order-dependent",
+          "faultType": "premature-state-commit",
+          "trigger": "Accuse Hooper and choose the circumstantial Imply argument.",
+          "effect": "Hooper is recorded as the revealed culprit before evidence or confession.",
+          "description": "Accuse Hooper and choose the circumstantial Imply argument. Hooper is recorded as the revealed culprit before evidence or confession.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_13",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/interrogation.ink",
+            "knot": "claim_hooper_took_component",
+            "upstreamLine": 664
+          },
+          "dimensions": {
+            "depth": 18,
+            "width": 3,
+            "stateDimensionality": 5,
+            "rarity": 5,
+            "delay": 6,
+            "revisit": 0,
+            "deception": 2,
+            "order": 5
+          }
+        },
+        {
+          "id": "intercept-14-threat-loses-clue",
+          "family": "delayed-consequence",
+          "faultType": "write-after-write-loss",
+          "trigger": "Threaten Hooper with the exact Hut 2 hiding place.",
+          "effect": "The freshly stored straight clue is immediately overwritten with NONE.",
+          "description": "Threaten Hooper with the exact Hut 2 hiding place. The freshly stored straight clue is immediately overwritten with NONE.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_14",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/escape.ink",
+            "knot": "inside_hoopers_hut",
+            "upstreamLine": 876
+          },
+          "dimensions": {
+            "depth": 20,
+            "width": 3,
+            "stateDimensionality": 4,
+            "rarity": 4,
+            "delay": 8,
+            "revisit": 0,
+            "deception": 2,
+            "order": 3
+          }
+        },
+        {
+          "id": "intercept-15-door-revisit-breaks-window",
+          "family": "revisit-after-mutation",
+          "faultType": "revisit-side-effect",
+          "trigger": "Try the window, listen at the keyhole, then revisit the door.",
+          "effect": "Revisiting the locked door marks the untouched window as smashed.",
+          "description": "Try the window, listen at the keyhole, then revisit the door. Revisiting the locked door marks the untouched window as smashed.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_15",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/escape.ink",
+            "knot": "slam_door_shut_and_gone.from_outside_heard",
+            "upstreamLine": 973
+          },
+          "dimensions": {
+            "depth": 23,
+            "width": 3,
+            "stateDimensionality": 5,
+            "rarity": 5,
+            "delay": 2,
+            "revisit": 3,
+            "deception": 2,
+            "order": 4
+          }
+        },
+        {
+          "id": "intercept-16-bunk-loop-forgets-tool",
+          "family": "loop-count",
+          "faultType": "loop-off-by-one",
+          "trigger": "Inspect enough bunk items to reveal Something else, then take it.",
+          "effect": "On the revisit threshold, the selected window-smashing tool is reset.",
+          "description": "Inspect enough bunk items to reveal Something else, then take it. On the revisit threshold, the selected window-smashing tool is reset.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_16",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/escape.ink",
+            "knot": "slam_door_shut_and_gone.find_something_to_smash_window",
+            "upstreamLine": 1076
+          },
+          "dimensions": {
+            "depth": 28,
+            "width": 4,
+            "stateDimensionality": 4,
+            "rarity": 5,
+            "delay": 2,
+            "revisit": 4,
+            "deception": 3,
+            "order": 3
+          }
+        },
+        {
+          "id": "intercept-17-muddy-route-duplicates-component",
+          "family": "false-novelty",
+          "faultType": "irrelevant-state-coupling",
+          "trigger": "Take the longer muddy route to Hut 2.",
+          "effect": "The irrelevant muddy-shoes flag also creates the component before it is collected.",
+          "description": "Take the longer muddy route to Hut 2. The irrelevant muddy-shoes flag also creates the component before it is collected.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_17",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/escape.ink",
+            "knot": "smash_the_window",
+            "upstreamLine": 1104
+          },
+          "dimensions": {
+            "depth": 30,
+            "width": 3,
+            "stateDimensionality": 6,
+            "rarity": 4,
+            "delay": 1,
+            "revisit": 1,
+            "deception": 5,
+            "order": 2
+          }
+        },
+        {
+          "id": "intercept-18-leave-takes-component",
+          "family": "shallow-obvious",
+          "faultType": "choice-effect-inversion",
+          "trigger": "Choose Leave it after reaching the hidden component.",
+          "effect": "The Leave it action puts the component into inventory.",
+          "description": "Choose Leave it after reaching the hidden component. The Leave it action puts the component into inventory.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_18",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/escape.ink",
+            "knot": "smash_the_window",
+            "upstreamLine": 1111
+          },
+          "dimensions": {
+            "depth": 31,
+            "width": 2,
+            "stateDimensionality": 5,
+            "rarity": 4,
+            "delay": 0,
+            "revisit": 1,
+            "deception": 1,
+            "order": 2
+          }
+        },
+        {
+          "id": "intercept-19-compound-item-resurrection",
+          "family": "compound-needle",
+          "faultType": "compound-state-corruption",
+          "trigger": "Take the muddy route, frame Hooper on the tent, and return without the component.",
+          "effect": "The component resurrects only when three unrelated history conditions coincide.",
+          "description": "Take the muddy route, frame Hooper on the tent, and return without the component. The component resurrects only when three unrelated history conditions coincide.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_19",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/endgame.ink",
+            "knot": "return_to_room_after_excursion",
+            "upstreamLine": 1206
+          },
+          "dimensions": {
+            "depth": 38,
+            "width": 4,
+            "stateDimensionality": 8,
+            "rarity": 7,
+            "delay": 6,
+            "revisit": 2,
+            "deception": 4,
+            "order": 6
+          }
+        },
+        {
+          "id": "intercept-20-returned-component-option-hidden",
+          "family": "delayed-consequence",
+          "faultType": "delayed-missing-choice",
+          "trigger": "Return to the room carrying the component and reach morning.",
+          "effect": "The Show him the component option is hidden by an inverted condition.",
+          "description": "Return to the room carrying the component and reach morning. The Show him the component option is hidden by an inverted condition.",
+          "oracle": {
+            "kind": "variable-equals",
+            "variable": "inkbench_bug_20",
+            "value": true
+          },
+          "site": {
+            "file": "bugs/endgame.ink",
+            "knot": "night_passes",
+            "upstreamLine": 1241
+          },
+          "dimensions": {
+            "depth": 39,
+            "width": 3,
+            "stateDimensionality": 7,
+            "rarity": 5,
+            "delay": 7,
+            "revisit": 2,
+            "deception": 3,
+            "order": 4
+          }
+        }
+      ]
+    }
+  ]
+}

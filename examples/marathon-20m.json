@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "families": [
+    "deep-corridor",
+    "rare-prefix",
+    "combination-lock",
+    "novelty-honeypot",
+    "false-novelty",
+    "delayed-consequence",
+    "order-dependent",
+    "compound-needle"
+  ],
+  "algorithms": ["random", "systematic", "coverage", "swarm", "inkcheck"],
+  "fixtureSeeds": [201, 202, 203],
+  "searchSeeds": [501, 502, 503],
+  "budgets": [1200000],
+  "budgetMode": "wall-time",
+  "workBudgetCeiling": 100000000,
+  "difficulty": 10,
+  "storySeed": 1,
+  "cellOrder": "counterbalanced",
+  "scheduleSeed": 9001,
+  "fixturePartition": "evaluation",
+  "inkcheckOptions": {
+    "search": "portfolio",
+    "minRepro": false,
+    "maxDepth": 1000,
+    "concurrency": 1
+  },
+  "resources": {
+    "maxMemoryMb": 4096,
+    "progressIntervalTransitions": 10000,
+    "progressIntervalMs": 1000
+  }
+}

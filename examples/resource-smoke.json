@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "families": ["compound-needle"],
+  "algorithms": ["random", "systematic", "coverage", "swarm"],
+  "fixtureSeeds": [101],
+  "searchSeeds": [101],
+  "budgets": [1000, 3000, 10000, 30000],
+  "difficulty": 3,
+  "storySeed": 1,
+  "resources": {
+    "maxMemoryMb": 64,
+    "maxTimeMs": 60000,
+    "progressIntervalTransitions": 1000
+  }
+}

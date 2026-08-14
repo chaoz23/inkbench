@@ -13,12 +13,17 @@
 
 ## v0.2.0 — measurement validity
 
+- Resource-bounded isolated workers with heap/time guards, streamed progress, partial evidence, and execution-fingerprint-safe matrix resume. **Implemented.**
+- Explicit checkpoint ownership and separate process/snapshot/checkpoint/coverage memory accounting.
+- Cold-start versus mature logarithmic-budget regimes through 10 million native work units with 30 paired held-out repetitions.
 - Official `inklecate` compile/replay validation and compiler-version provenance.
 - Multiple bug/oracle classes, multi-bug fixtures, and exhaustive small-fixture ground truth.
 - Root-replay and checkpoint-restore budget regimes.
-- Peak RSS sampling and external-process CPU accounting.
-- Frozen training/validation/blind-evaluation seed partitions and preregistration files.
-- Statistical intervals and paired significance/effect-size reporting.
+- External-process CPU accounting beyond current worker-local CPU and parent-observed wall time.
+- Frozen training/validation/evaluation seed partitions, structural-seed replication, counterbalanced serial schedules, and preregistration files. **Initial generated/authored/mutant contract implemented; a truly blind external holdout remains open.**
+- Statistical intervals and paired significance/effect-size reporting. **Wilson intervals and honest observed-prefix survival are implemented; paired effect sizes and informative-censoring models remain open.**
+
+Implemented ahead of the remaining v0.2 items: first-class planned wall-time budgets, 20/60-minute marathon presets, oracle-neutral InkCheck replay scoring, globally elapsed InkCheck evidence timestamps with pass-local work labels, and a lazy coverage-priority heap suitable for long runs.
 
 ## v0.3.0 — corpus expansion and adapters
 

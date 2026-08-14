@@ -20,6 +20,8 @@ test("experiment output preserves raw runs, probability, survival, and complemen
   assert.equal(result.runs.length, 16);
   assert.equal(result.summary.probability.length, 4);
   assert.ok(result.summary.survival.length >= 4);
+  assert.ok(result.summary.survivalTime.length >= 4);
+  assert.ok(result.summary.probability.every((cell) => "medianElapsedMsToDiscovery" in cell));
   assert.equal(result.summary.complementarity.length, 2);
   assert.ok(result.summary.complementarity.every((cell) => cell.runsCompared === 4));
 

@@ -4,9 +4,11 @@ InkBench is a neutral, reproducible benchmarking harness for measuring how effec
 
 It does not exist to make InkSwarm win. It exists to discover whether InkSwarm—or any future searcher—improves bug yield per fixed compute budget or reliably finds classes of failures that simpler strategies miss.
 
-Version 0.1.0 is a working research vertical slice: it generates Ink fixtures, runs a pinned and licensed three-project authored corpus, enforces transition budgets, runs four internal strategies, invokes the real InkCheck CLI when configured, records exact repro paths, and emits raw datasets plus competence, survival, coverage, and complementarity summaries.
+Version 0.2.0 is a working research harness: it generates Ink fixtures, runs a pinned and licensed three-project authored corpus, includes a reproducible 20-bug derivative of The Intercept, enforces transition and wall-time budgets, runs four internal strategies, invokes the real InkCheck CLI when configured, records exact repro paths, and emits raw datasets plus competence, survival, coverage, and complementarity summaries.
 
-## What ships in 0.1.0
+The 0.2.0 release adds the resource-bounded execution layer needed for mature InkSwarm experiments: explicit checkpoint ownership, heap/time guards, isolated workers, streamed progress, atomic partial evidence, and resumable experiment matrices.
+
+## What ships in 0.2.0
 
 - Deterministic procedural generators for all eleven initial bug families.
 - Separate fixture, search, and Ink-runtime seeds.
@@ -14,6 +16,7 @@ Version 0.1.0 is a working research vertical slice: it generates Ink fixtures, r
 - Random, deterministic systematic, simple coverage-guided, and minimal InkSwarm explorers.
 - An optional adapter for the actual [InkCheck](https://github.com/chaoz23/inkcheck) CLI—not a favorable reimplementation.
 - A separate authored-project tier containing Dog Ink Adventure, The Intercept, and Heresy II with pinned upstream commits, licenses, source/artifact hashes, and official `inklecate` 1.2.1 compiled artifacts.
+- A separate authored-planted tier containing 20 disclosed, replay-verified mutations across 16 locations and 19 fault types in The Intercept.
 - Transition, launch, wall-time, CPU-time, empirical coverage, first-discovery, and replay evidence.
 - NDJSON, CSV, JSON, Markdown, generated `.ink`, and manifest outputs.
 - Detection-probability cells, right-censored survival points, family competence maps, and paired exclusive/union discoveries.
@@ -44,6 +47,10 @@ npm run experiment:quick
 # Verify and smoke-test the authored corpus
 node dist/cli.js corpus verify
 npm run corpus:smoke
+
+# Verify and compare strategies on the 20-bug authored derivative
+node dist/cli.js mutants verify
+node dist/cli.js mutants experiment --preset smoke --out artifacts/intercept-20-smoke
 ```
 
 The package binary is also named `inkbench` after installation.
@@ -66,14 +73,15 @@ The package binary is also named `inkbench` after installation.
 
 Each generated fixture has a machine-readable manifest with difficulty coordinates for depth, width, state dimensionality, rarity, delay, revisit, deception, and order. Searchers never receive the manifest or generator targets.
 
-## Two benchmark tiers
+## Three benchmark tiers
 
 | Tier | Question | Primary evidence |
 | --- | --- | --- |
 | `generated-planted` | Does a strategy find a known defect within budget? | discovery probability, time-to-discovery, survival, bug-family competence, exclusive bugs |
+| `authored-planted` | Can a strategy find diverse known defects in realistic authored structure? | bugs found per run, per-bug probability, fault-type competence, paired exclusive bugs |
 | `authored-project` | Does behavior transfer to realistic Ink structure? | empirical state/edge/location coverage, runtime findings, compute cost, paired exclusive coverage |
 
-The tiers are deliberately not pooled. Real stories have no planted-bug oracle, so a higher coverage count is neither a bug discovery nor proof-relative coverage. They provide ecological-validity and complementarity evidence around the causal planted-bug experiments.
+The tiers are deliberately not pooled. Clean real stories have no planted-bug oracle, so a higher coverage count is neither a bug discovery nor proof-relative coverage. The authored-planted tier is a disclosed mutation experiment, not evidence about the upstream story's quality.
 
 The authored corpus is inherited from InkCheck's promotion corpus and includes:
 
@@ -83,19 +91,71 @@ The authored corpus is inherited from InkCheck's promotion corpus and includes:
 
 See [the corpus provenance record](corpus/authored-v1/README.md), machine-readable [manifest](corpus/authored-v1/manifest.json), and [third-party notices](THIRD_PARTY_NOTICES.md). Every load verifies source, license, and compiled-artifact digests. Authored projects use official `inklecate` 1.2.1 `-c` output in the same `inkjs` runtime used by the internal searchers; this cleanly separates compiler compatibility from search behavior.
 
+The authored-planted corpus keeps the clean Intercept unchanged and derives `the-intercept-20` deterministically. Its five-file source bundle distributes the mutated narrative code and private oracle declarations across four story-phase files: opening, interrogation, escape/revisit, and endgame. The manifest records trigger, effect, fault type, bug family, upstream line, difficulty coordinates, hashes, and one exact replay witness for every mutation. See [its corpus record](corpus/authored-planted-v1/README.md) and [manifest](corpus/authored-planted-v1/manifest.json).
+
 ## Strategy contract
 
 InkBench owns the story and measurement. Internal strategies receive the same observation:
 
 - current location, output, tags, and legal choices;
 - global variables and declared-location visit counts;
-- terminal, warning, error, and already-observable bug events;
+- terminal, warning, and error events;
 - semantic coverage deltas; and
 - opaque handles for checkpoints they have already reached.
 
-Every strategy may restore any checkpoint it observed. InkSwarm's saved colonies are therefore an allocation policy, not privileged access. Generator parameters, planted-oracle definitions, undiscovered graph structure, and raw save JSON remain hidden.
+Every strategy may explicitly retain and later restore any checkpoint it observed, then release it when no longer needed. Retained Ink save states are measured and charged to that strategy. Root and the active state are runtime infrastructure; the controller no longer keeps every historical transition forever. InkSwarm's saved colonies are therefore an allocation policy, not privileged access. Generator parameters, planted-oracle definitions and marker globals, bug identities, undiscovered graph structure, and raw save JSON remain hidden. Oracle globals are removed from semantic and raw-state novelty keys. InkCheck receives an oracle-neutral source copy and its returned paths are scored by replay against the pinned instrumented artifact.
 
 The primary in-process budget is one **choice transition**. Checkpoint restore is not a transition, but its CPU and wall cost is measured. See [the architecture decision record](docs/architecture.md) for the full boundary and limitations.
+
+## Resource-bounded and mature runs
+
+Long runs should use isolated workers so one strategy cannot take down the matrix process:
+
+```sh
+inkbench run \
+  --family compound-needle \
+  --algorithm swarm \
+  --difficulty 3 \
+  --budget 1000000 \
+  --isolated \
+  --max-memory-mb 1536 \
+  --max-time-seconds 1800 \
+  --progress ndjson \
+  --json
+```
+
+The worker stops cleanly before its heap watermark and returns `status: "resource-stopped"` with partial coverage, findings, witnesses, peak heap/RSS, and retained-checkpoint evidence. `--worker-heap-mb` optionally sets the child V8 ceiling; otherwise InkBench places an explicit memory guard below a derived worker ceiling.
+
+The deliberately large mature matrices use held-out seeds, 30 paired repetitions, logarithmic budgets from 1,000 through 10,000,000 native work units, a 1,536 MiB heap guard, and a 30-minute per-cell time guard:
+
+```sh
+inkbench experiment --preset mature --out artifacts/mature --resume
+inkbench corpus experiment --preset mature --out artifacts/corpus-mature --resume
+inkbench mutants experiment --preset mature --out artifacts/intercept-20-mature --resume
+```
+
+`mature` implies isolated execution. Each cell writes an atomic `cells/<run-id>.json` and a replace-in-place `progress/<run-id>.json`; `matrix-state.json` and the durable append-only `runs.partial.ndjson` journal survive interruption. Per-cell files are authoritative if the journal's last line is interrupted. `--resume` skips exact completed run IDs only when the frozen schedule and execution fingerprint match. Legacy or mismatched matrices are preserved and require a fresh output directory. It does **not** claim to resume a search frontier inside an interrupted cell; exact cross-process policy continuation remains future work.
+
+Resource-stopped cells remain valid observed-prefix evidence. Reports include them in clearly labeled observed-anytime estimates and survival censoring while separating completed fixed-grant cells. Compare cross-tool runs through wall time, CPU, peak memory, and findings while retaining each tool's native budget unit.
+
+### Marathon protocol
+
+Wall-time is a first-class primary budget, distinct from an emergency guard. Reaching a planned timer yields `status: "completed"` and `stopReason: "time"`; hitting memory or the deliberately high native work ceiling first yields an incomplete resource-stopped cell. Reports retain both `budget: { unit: "wall-ms" }` and `workBudget`, so throughput never disappears behind a time-only result.
+
+The 20-minute tier stabilizes measurement, repeatability, resource behavior, and variance. The 60-minute tier changes only duration and is the first tier intended to support comparative claims:
+
+```sh
+# Hard generated planted cases: 360 counterbalanced serial cells in the v4 protocol.
+inkbench experiment --preset marathon-20m --inkcheck-command /absolute/path/to/inkcheck/dist/cli.js --out artifacts/marathon-20m --resume
+
+# Large real authored transfer case: Heresy II, 25 serial cells, at most 8h20m.
+inkbench corpus experiment --preset marathon-20m --inkcheck-command /absolute/path/to/inkcheck/dist/cli.js --out artifacts/heresy2-marathon-20m --resume
+
+# Multi-bug sanity/stress case: Intercept-20, 25 serial cells, but it may saturate early.
+inkbench mutants experiment --preset marathon-20m --inkcheck-command /absolute/path/to/inkcheck/dist/cli.js --out artifacts/intercept-20-marathon-20m --resume
+```
+
+Replace `20m` with `60m` without changing seeds or policy. On the current 8 GiB development machine the presets run cells sequentially with a 4,096 MiB heap watermark; do not run multiple marathon matrices concurrently. Intercept-20 is not by itself a marathon-quality discriminator when all strategies saturate. See [the marathon protocol](docs/marathon-protocol.md).
 
 ## Algorithms
 
@@ -117,7 +177,9 @@ inkbench run \
   --budget 10000
 ```
 
-InkCheck's native “states explored” unit is close to, but not identical with, InkBench's choice-transition unit. Reports preserve that distinction and leave unavailable edge/state metrics as `null`. Do not erase the unit label in comparisons.
+InkCheck 0.7.2 defaults to **10,000,000 states** (with a 100,000,000 ceiling) and workload-aware automatic concurrency; small exhaustive stories still exit early. That is an important calibration point: InkBench's 100/500-transition cells are cold-start checks, not evidence about mature search behavior. The adapter always passes the matrix's explicit `--max-states`, story seed, memory, and time limits, so it never relies silently on InkCheck's defaults. The main marathon arm fixes `--concurrency 1`, portfolio search, no repro minimization, and depth 1,000 explicitly. Reports record requested and effective parallelism. Separate `marathon-20m-inkcheck-product` and `marathon-60m-inkcheck-product` corpus/mutant presets retain InkCheck's automatic concurrency and other product defaults for sensitivity analysis; do not pool those cells with the one-core arm.
+
+InkCheck's native “states explored” unit is close to, but not identical with, InkBench's choice-transition unit. Reports preserve that distinction and leave unavailable edge/state metrics as `null`. Do not erase the unit label in comparisons. The marathon adapter uses InkCheck's bounded NDJSON evidence stream, records the exact CLI artifact hash, and replays ordinary opaque generated-story ending paths against a private instrumented artifact. Generated search input contains no oracle variables, marker/signal tags, semantic endpoint names, fixture IDs, or removal-site breadcrumbs. Portfolio `firstDiscoveredAtState` values remain pass-local, but streamed `elapsedMs` values are process-global: InkCheck participates in wall-time survival curves and remains excluded from transition/state-unit survival curves. Reports also label InkCheck's full-source information regime, which differs from the common runtime-observation regime used in process.
 
 ## Experiment outputs
 
@@ -136,6 +198,8 @@ artifacts/quick/
 ```
 
 `runs.ndjson` is the authoritative cell-level dataset. `summary.json` includes probability and Kaplan–Meier-style survival points. `summary.md` renders family competence and complementarity tables. Timings naturally vary; choices, discoveries, budgets, coverage counts, and witnesses are deterministic for pinned versions and seeds.
+
+Run reports use schema v4 and include execution fingerprints, observability contracts, phase-aware timing, and resource provenance. Matrix-state schema v2 binds the full ordered run-ID schedule. Versioned progress events and resumable schemas live beside the other contracts in [`schemas/`](schemas).
 
 The versioned JSON schemas live in [`schemas/`](schemas), and the contribution path for another strategy or external tool is documented in [adding a searcher](docs/adding-a-searcher.md).
 
@@ -156,6 +220,16 @@ inkbench corpus experiment --config examples/authored-smoke.json --out artifacts
 
 The authored summary reports empirical coverage and paired exclusive locations/edges. Its raw runs carry `benchmarkTier: "authored-project"`, an empty `plantedBugIds` array, item-level coverage hashes, and reproducible runtime-warning/error paths. Add `--inkcheck-command` to either corpus command to exercise the real InkCheck adapter; InkCheck retains its native state unit and unavailable item-level metrics remain `null`.
 
+The authored-planted derivative also has a separate command and multi-bug report:
+
+```sh
+inkbench mutants list
+inkbench mutants run --story the-intercept-20 --algorithm swarm --budget 10000
+inkbench mutants experiment --config examples/intercept-20-development.json --out artifacts/intercept-20
+```
+
+Its summary reports mean/median/max distinct bugs per run, the discovered fraction of 20, probability of any/all discoveries, per-bug probabilities and discovery times, and paired exclusive `(search seed, bug)` discoveries. Fixed-budget cells count only completed runs; resource-stopped evidence remains in raw and resource outputs.
+
 ## Reading results honestly
 
 - Compare planted-bug probability at a fixed budget, not only aggregate state counts.
@@ -163,15 +237,21 @@ The authored summary reports empirical coverage and paired exclusive locations/e
 - Treat undiscovered runs as right-censored, not as infinite discovery times.
 - Call empirical counts “states observed,” not percentage coverage, unless the reachable denominator is proven.
 - Separate transition efficiency from wall/CPU efficiency.
+- Treat memory/time-stopped cells as partial resource evidence, not completed fixed-budget misses.
 - Freeze held-out fixture seeds before tuning an algorithm.
 - Keep failed/unavailable cells in the raw dataset.
 - Never convert authored-project coverage into planted-bug yield or survival data.
+- Never describe the authored-planted mutations as defects in the clean upstream Intercept.
 
-The v0.1 generated-fixture oracle is an explicit global set only when the planted defect is reached. Authored projects already use pinned official `inklecate` artifacts; the next measurement-validity milestone adds official replay of generated witnesses, several defect classes, exhaustive denominators for small fixtures, root-replay budget regimes, and stronger statistical intervals. See [methodology](docs/methodology.md) and [milestones](docs/milestones.md).
+The v0.1 generated-fixture oracle is an explicit global set only when the planted defect is reached. The authored-planted derivative broadens this to 19 fault types and carries checksum-pinned witnesses for all 20 oracles. The next measurement-validity milestone adds official replay of generated-fixture witnesses, exhaustive denominators for small fixtures, root-replay budget regimes, and stronger statistical intervals. See [methodology](docs/methodology.md) and [milestones](docs/milestones.md).
 
 The checked [v0.1 development matrix](docs/v0.1-development-results.md) is deliberately candid: the current minimal swarm produced no exclusive discovery in 792 small development cells and was weaker than the simple controls in several families. It is a forcing function for the next experiments, not a promotional benchmark result.
 
 The separate [v0.1 authored-project smoke](docs/v0.1-authored-smoke-results.md) verifies all three real stories across the four internal strategies and records initial coverage complementarity, with an explicit one-seed/no-claims caveat.
+
+The [v0.2 resource-bounded smoke](docs/v0.2-resource-smoke-results.md) verifies guarded isolated workers, explicit checkpoint cost, partial memory-stop evidence, and matrix resume on one logarithmic-budget cell. It is infrastructure evidence, not a leaderboard.
+
+The [v0.1 Intercept-20 smoke](docs/v0.1-intercept-20-smoke-results.md) verifies multi-bug yield, per-bug competence, and paired complementarity on one tiny cell. Its apparent exclusive discovery is explicitly not a swarm claim without the repeated mature matrix.
 
 ## Why InkBench and InkSwarm are separate
 

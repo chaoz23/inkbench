@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "storyIds": ["the-intercept-20"],
+  "algorithms": ["random", "systematic", "coverage", "swarm"],
+  "searchSeeds": [1, 2, 3, 4, 5],
+  "budgets": [100, 1000, 10000],
+  "storySeed": 1,
+  "resources": {
+    "maxMemoryMb": 1536,
+    "maxTimeMs": 300000,
+    "progressIntervalTransitions": 10000
+  }
+}

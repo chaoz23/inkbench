@@ -12,4 +12,6 @@ Please include:
 
 Real-story corpus contributions must include the upstream repository and immutable commit, author and license/consent basis, required attribution text, entrypoint and include files, source and compiled-artifact digests, compiler version/arguments, and a clear statement of any modification. Keep authored coverage results separate from planted-bug scoring.
 
+Authored-planted contributions must keep the clean source separate, provide a deterministic transformation, disclose each fault type/site/trigger/effect, and include a checksum-pinned replay witness for every oracle. A marker without a corresponding observable defect is not a planted bug. Do not describe synthetic mutations as upstream defects.
+
 Do not tune a strategy against held-out evaluation seeds or add a mechanism solely because its metaphor is appealing. New InkSwarm mechanisms should address a measured benchmark failure.

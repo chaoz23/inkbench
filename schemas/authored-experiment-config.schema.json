@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/chaoz23/inkbench/blob/v0.1.0/schemas/authored-experiment-config.schema.json",
+  "$id": "https://github.com/chaoz23/inkbench/blob/v0.2.0/schemas/authored-experiment-config.schema.json",
   "title": "InkBench authored-project experiment config v1",
   "type": "object",
   "additionalProperties": false,
@@ -21,7 +21,33 @@
     },
     "searchSeeds": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 0 } },
     "budgets": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 1 } },
+    "budgetMode": { "enum": ["work", "wall-time"] },
+    "workBudgetCeiling": { "type": "integer", "minimum": 1 },
     "storySeed": { "type": "integer", "minimum": 1 },
-    "inkcheckCommand": { "type": "string", "minLength": 1 }
+    "cellOrder": { "enum": ["configured", "counterbalanced"] },
+    "scheduleSeed": { "type": "integer" },
+    "fixturePartition": { "enum": ["development", "validation", "evaluation"] },
+    "inkcheckCommand": { "type": "string", "minLength": 1 },
+    "inkcheckOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "search": { "enum": ["portfolio", "shared", "shared-variable"] },
+        "minRepro": { "type": "boolean" },
+        "maxDepth": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "auto": { "type": "boolean" },
+        "concurrency": { "anyOf": [{ "const": "auto" }, { "type": "integer", "minimum": 1, "maximum": 16 }] }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxMemoryMb": { "type": "integer", "minimum": 1 },
+        "maxTimeMs": { "type": "integer", "minimum": 1 },
+        "progressIntervalTransitions": { "type": "integer", "minimum": 1 },
+        "progressIntervalMs": { "type": "integer", "minimum": 1 }
+      }
+    }
   }
 }

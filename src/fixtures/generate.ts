@@ -1,4 +1,5 @@
 import { BUG_FAMILIES, SCHEMA_VERSION, type BugFamily, type DifficultyCoordinates, type FixtureManifest, type GeneratedFixture } from "../core/types.js";
+import { hash } from "../core/hash.js";
 import { Prng } from "../core/prng.js";
 
 interface BuiltFixture {
@@ -31,13 +32,42 @@ function knot(name: string, prose: string, content: string[]): string[] {
 
 function endingKnots(bugId: string): string[] {
   return [
-    ...knot("bug", "The planted fault is now observable.", [
+    ...knot("bug", "__INKBENCH_TARGET_OUTCOME__", [
       "~ ib_bug = 1",
       `# INKBENCH_BUG:${bugId}`,
       "-> END",
     ]),
-    ...knot("safe", "This path ends without triggering the planted fault.", ["-> END"]),
+    ...knot("safe", "__INKBENCH_CONTROL_OUTCOME__", ["-> END"]),
   ];
+}
+
+function blindEndpoints(family: BugFamily, seed: number, built: BuiltFixture): BuiltFixture {
+  const left = `terminal_${hash({ family, seed, endpoint: "left" }, 10)}`;
+  const right = `terminal_${hash({ family, seed, endpoint: "right" }, 10)}`;
+  const targetOnLeft = Number.parseInt(hash({ family, seed, endpointAssignment: 1 }, 2), 16) % 2 === 0;
+  const target = targetOnLeft ? left : right;
+  const control = targetOnLeft ? right : left;
+  const targetOutcome = `Outcome ${hash({ family, seed, endpoint: target }, 12)}.`;
+  const controlOutcome = `Outcome ${hash({ family, seed, endpoint: control }, 12)}.`;
+  let body = built.body.map((line) => line
+    .replace(/^=== bug ===$/, `=== ${target} ===`)
+    .replace(/^=== safe ===$/, `=== ${control} ===`)
+    .replace(/-> bug\b/g, `-> ${target}`)
+    .replace(/-> safe\b/g, `-> ${control}`)
+    .replace("__INKBENCH_TARGET_OUTCOME__", targetOutcome)
+    .replace("__INKBENCH_CONTROL_OUTCOME__", controlOutcome));
+  if (!targetOnLeft) {
+    const targetStart = body.indexOf(`=== ${target} ===`);
+    const controlStart = body.indexOf(`=== ${control} ===`);
+    if (targetStart < 0 || controlStart <= targetStart) throw new Error("generated endpoint layout is invalid");
+    body = [...body.slice(0, targetStart), ...body.slice(controlStart), ...body.slice(targetStart, controlStart)];
+  }
+  return {
+    ...built,
+    body,
+    locations: built.locations.map((location) => location === "bug" ? target : location === "safe" ? control : location),
+    parameters: { ...built.parameters, targetEndpoint: target, controlEndpoint: control, targetEndpointPosition: targetOnLeft ? 0 : 1 },
+  };
 }
 
 function dims(overrides: Partial<DifficultyCoordinates>): DifficultyCoordinates {
@@ -62,7 +92,7 @@ function shallowObvious(rng: Prng, difficulty: number, bugId: string): BuiltFixt
   for (let index = 0; index < width; index += 1) {
     choices.push(...choice(`Obvious option ${index + 1}`, index === target ? "bug" : "safe"));
   }
-  lines.push(...knot("start", "A small control fixture offers several obvious exits.", choices), ...endingKnots(bugId));
+  lines.push(...knot("start", "A small fixture offers several obvious exits.", choices), ...endingKnots(bugId));
   return {
     body: lines,
     locations: ["start", "bug", "safe"],
@@ -73,7 +103,7 @@ function shallowObvious(rng: Prng, difficulty: number, bugId: string): BuiltFixt
 }
 
 function deepCorridor(_rng: Prng, difficulty: number, bugId: string): BuiltFixture {
-  const depth = 4 + difficulty * 4;
+  const depth = 4 + difficulty * 4 + _rng.integer(3);
   const lines = ["VAR ib_bug = 0", "-> corridor_0", ""];
   const locations: string[] = [];
   for (let index = 0; index < depth; index += 1) {
@@ -179,7 +209,7 @@ function combinationLock(rng: Prng, difficulty: number, bugId: string): BuiltFix
 }
 
 function loopCount(_rng: Prng, difficulty: number, bugId: string): BuiltFixture {
-  const triggerCount = 2 + difficulty * 2;
+  const triggerCount = 2 + difficulty * 2 + _rng.integer(3);
   const lines = [
     "VAR ib_bug = 0",
     "VAR loop_visits = 0",
@@ -209,7 +239,7 @@ function loopCount(_rng: Prng, difficulty: number, bugId: string): BuiltFixture 
 }
 
 function revisitAfterMutation(_rng: Prng, difficulty: number, bugId: string): BuiltFixture {
-  const mutationDistance = 1 + difficulty * 2;
+  const mutationDistance = 1 + difficulty * 2 + _rng.integer(3);
   const lines = ["VAR ib_bug = 0", "VAR has_mutation = 0", "VAR hub_visits = 0", "-> hub", ""];
   const locations = ["hub", "forest"];
   lines.push(...knot("hub", "Old territory may have changed.", [
@@ -244,10 +274,10 @@ function revisitAfterMutation(_rng: Prng, difficulty: number, bugId: string): Bu
 }
 
 function noveltyHoneypot(_rng: Prng, difficulty: number, bugId: string): BuiltFixture {
-  const casinoWidth = 3 + difficulty;
-  const casinoDepth = 2 + difficulty;
-  const entrances = 1 + difficulty;
-  const roadDepth = 3 + difficulty * 2;
+  const casinoWidth = 3 + difficulty + _rng.integer(2);
+  const casinoDepth = 2 + difficulty + _rng.integer(3);
+  const entrances = 1 + difficulty + _rng.integer(2);
+  const roadDepth = 3 + difficulty * 2 + _rng.integer(3);
   const lines = ["VAR ib_bug = 0", "VAR casino_step = 0", "VAR casino_signature = 0", "-> start", ""];
   const startChoices = [...choice("Take the boring road", "road_0")];
   for (let index = 0; index < entrances; index += 1) {
@@ -286,8 +316,8 @@ function noveltyHoneypot(_rng: Prng, difficulty: number, bugId: string): BuiltFi
 }
 
 function falseNovelty(_rng: Prng, difficulty: number, bugId: string): BuiltFixture {
-  const noiseWidth = 2 + difficulty;
-  const roadDepth = 3 + difficulty * 2;
+  const noiseWidth = 2 + difficulty + _rng.integer(2);
+  const roadDepth = 3 + difficulty * 2 + _rng.integer(3);
   const lines = ["VAR ib_bug = 0", "VAR irrelevant_counter = 0", "-> start", ""];
   lines.push(...knot("start", "A quiet road sits beside a machine with endlessly changing numbers.", [
     ...choice("Take the quiet road", "quiet_0"),
@@ -480,7 +510,7 @@ export function generateFixture(family: BugFamily, seed: number, difficulty = 1)
   const fixtureId = `${family}-d${difficulty}-s${seed}`;
   const bugId = `${fixtureId}:bug-1`;
   const rng = new Prng(seed);
-  const built = family === "shallow-obvious" ? shallowObvious(rng, difficulty, bugId)
+  const generated = family === "shallow-obvious" ? shallowObvious(rng, difficulty, bugId)
     : family === "deep-corridor" ? deepCorridor(rng, difficulty, bugId)
       : family === "rare-prefix" ? rarePrefix(rng, difficulty, bugId)
         : family === "combination-lock" ? combinationLock(rng, difficulty, bugId)
@@ -491,9 +521,10 @@ export function generateFixture(family: BugFamily, seed: number, difficulty = 1)
                   : family === "delayed-consequence" ? delayedConsequence(rng, difficulty, bugId)
                     : family === "order-dependent" ? orderDependent(rng, difficulty, bugId)
                       : compoundNeedle(rng, difficulty, bugId);
+  const built = blindEndpoints(family, seed, generated);
   const manifest: FixtureManifest = {
     schemaVersion: SCHEMA_VERSION,
-    generatorVersion: "0.1.0",
+    generatorVersion: "0.2.0",
     fixtureId,
     family,
     seed,
@@ -509,8 +540,7 @@ export function generateFixture(family: BugFamily, seed: number, difficulty = 1)
     }],
   };
   const source = [
-    `// Generated by InkBench 0.1.0: ${fixtureId}`,
-    "// Search strategies must not receive the fixture manifest or generation parameters.",
+    "// Generated by InkBench. Fixture identity and private scoring data are intentionally omitted.",
     ...built.body,
   ].join("\n").trimEnd() + "\n";
   return { tier: "generated-planted", source, manifest };

@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/chaoz23/inkbench/blob/v0.1.0/schemas/fixture-manifest.schema.json",
+  "$id": "https://github.com/chaoz23/inkbench/blob/v0.2.0/schemas/fixture-manifest.schema.json",
   "title": "InkBench generated fixture manifest v1",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "generatorVersion", "fixtureId", "family", "seed", "difficulty", "dimensions", "parameters", "locations", "bugs"],
   "properties": {
     "schemaVersion": { "const": 1 },
-    "generatorVersion": { "const": "0.1.0" },
+    "generatorVersion": { "const": "0.2.0" },
     "fixtureId": { "type": "string", "minLength": 1 },
     "family": { "$ref": "#/$defs/family" },
     "seed": { "type": "integer" },
