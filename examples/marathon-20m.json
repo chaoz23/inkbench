@@ -11,13 +11,16 @@
     "compound-needle"
   ],
   "algorithms": ["random", "systematic", "coverage", "swarm", "inkcheck"],
-  "fixtureSeeds": [101],
-  "searchSeeds": [101, 102, 103],
+  "fixtureSeeds": [201, 202, 203],
+  "searchSeeds": [501, 502, 503],
   "budgets": [1200000],
   "budgetMode": "wall-time",
   "workBudgetCeiling": 100000000,
   "difficulty": 10,
   "storySeed": 1,
+  "cellOrder": "counterbalanced",
+  "scheduleSeed": 9001,
+  "fixturePartition": "evaluation",
   "inkcheckOptions": {
     "search": "portfolio",
     "minRepro": false,

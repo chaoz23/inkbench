@@ -8,7 +8,7 @@ The marathon tier asks whether InkSwarm or InkCheck improves planted-bug yield p
 
 The 20-minute tier is a protocol-validation experiment. It must establish that cells terminate honestly, progress and atomic output survive interruption, memory remains controlled, seeds replay, work ceilings do not bind, and paired outcomes have enough variance to justify a longer run. It is not automatically a swarm-emergence claim.
 
-The 60-minute tier is promoted from the same configuration. Only `budgets: [1200000]` changes to `budgets: [3600000]`. Fixture seeds, search seeds, algorithms, search options, story seed, memory watermark, scoring, and output contract stay fixed.
+The 60-minute tier is promoted from the same configuration. Only `budgets: [1200000]` changes to `budgets: [3600000]`. Fixture seeds, search seeds, algorithms, search options, story seed, memory watermark, scoring, executable pins, and counterbalanced serial schedule stay fixed.
 
 If important survival curves are still falling at 60 minutes, add longer tiers rather than extrapolating. All tiers write independent, resumable cells and may run for days.
 
@@ -21,7 +21,8 @@ If important survival curves are still falling at 60 minutes, add longer tiers r
 - Scheduling: one cell at a time. Do not co-schedule marathon matrices.
 - Parallelism: each internal algorithm uses one core. The primary InkCheck arm fixes `--concurrency 1`; reports retain InkCheck's requested/effective execution telemetry.
 - Planned time expiry: completed evidence.
-- Memory stop, error, cancellation, or premature native work ceiling: incomplete/resource evidence, excluded from completed-cell yield estimates.
+- Memory stop or premature native work ceiling: valid observed-prefix/resource evidence, excluded from fixed-grant-completer estimates but included in separately labeled observed-anytime estimates.
+- Error, cancellation, or adapter failure: failed cell, never a zero-discovery observation.
 - Search exhaustion: completed evidence, with the smaller actual wall time retained. Repeating an exhausted frontier until the timer would add no information.
 
 Wall time is directly comparable. CPU time is reported for in-process algorithms; the current InkCheck report does not expose child CPU time, so it remains `null` rather than being guessed.
@@ -32,7 +33,7 @@ The scientific discovery arm explicitly selects portfolio search, fixes concurre
 
 A separate product-default sensitivity arm records an empty `inkcheckOptions` object. It retains InkCheck's automatic concurrency, default portfolio, repro minimization, and depth 100. Do not pool this arm with the primary comparison; judge it using actual wall time and recorded effective parallelism.
 
-InkBench removes planted oracle declarations, assignments, and marker tags from InkCheck's search state. A triggering assignment becomes a reserved numeric runtime tag that InkCheck does not use for state identity, novelty, allocation, or ending identity. Only signaled paths are replayed against the pinned instrumented fixture to score bugs; ordinary ending paths are not streamed in this mode. Internal observations likewise omit bug events and bug IDs, and novelty keys exclude oracle globals.
+For generated fixtures, InkBench removes planted oracle declarations, assignments, marker/signal tags, fixture identity, semantic endpoint labels, and removal-site comments from the source given to InkCheck. InkCheck sees ordinary opaque endings; retained ending paths are replayed against the pinned private instrumented fixture to score bugs. Internal observations likewise omit bug events and bug IDs, and novelty keys exclude oracle globals. Authored-planted signal transport remains a separate disclosed instrumentation regime and may not be pooled without that label.
 
 InkCheck portfolio state positions remain pass-local rather than portfolio-global. The corrected bounded evidence stream adds a process-global elapsed timestamp to every first-retained replay path, so InkCheck enters wall-time survival curves while remaining excluded from transition/state-unit survival curves.
 
@@ -56,7 +57,11 @@ Promote when:
 - InkCheck adapter failures and unavailable timing fields remain explicit;
 - coverage-guided throughput is not dominated by an avoidable global frontier scan; and
 - output can resume after interruption without duplicating completed run IDs.
+- every report and matrix state binds to the exact harness/algorithm/dependency/external-CLI execution fingerprint; and
+- algorithm positions are counterbalanced across the frozen serial schedule.
 
 If a gate fails, change methodology and rerun 20 minutes. Do not tune InkSwarm mechanisms against held-out 60-minute outcomes.
 
 An InkCheck process that starts but does not finish its bounded evidence stream is recorded as `runtime-error`, not `adapter-unavailable` and not a zero-discovery result. The adapter uses InkCheck's opt-in `--json-stream` transport: replay paths are durable as they are retained, the terminal summary is bounded, and the CLI artifact SHA-256 is recorded. The wrapper enforces a five-second hard grace beyond the planned deadline; reaching that backstop is a failed cell, not clean time-budget evidence.
+
+Run-report schema v4 and matrix-state schema v2 intentionally invalidate old resume identity. Historical v3/v1 artifacts remain immutable evidence; reruns must use fresh artifact directories rather than mixing implementations under old run IDs.

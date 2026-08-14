@@ -1,5 +1,5 @@
 import { fixtureSourceHash } from "./hash.js";
-import { benchmarkRunId } from "./identity.js";
+import { benchmarkRunId, executionFingerprint } from "./identity.js";
 import { ResourceGuards } from "./resource-guards.js";
 import { InstrumentedController } from "./runtime.js";
 import {
@@ -33,7 +33,8 @@ export function runBenchmark(request: RunRequest): RunReport {
   if (!isInProcess(request.algorithm)) throw new RangeError(`unknown algorithm: ${request.algorithm}`);
 
   const searcher = getSearcher(request.algorithm);
-  const runId = benchmarkRunId(request);
+  const fingerprint = executionFingerprint(request);
+  const runId = benchmarkRunId(request, fingerprint);
   const wallStart = performance.now();
   const cpuStart = process.cpuUsage();
   const guards = new ResourceGuards({
@@ -101,7 +102,9 @@ export function runBenchmark(request: RunRequest): RunReport {
         }
       },
     });
+    const searchStarted = performance.now();
     const outcome = searcher.run(controller, request.searchSeed);
+    const searchEnded = performance.now();
     const stopReason = controller.resourceStopReason
       ?? (controller.transitions >= request.budget
         ? request.timeBudgetMs === undefined ? "budget" : "work-ceiling"
@@ -117,6 +120,12 @@ export function runBenchmark(request: RunRequest): RunReport {
       family: request.fixture.manifest.family,
       algorithm: request.algorithm,
       algorithmVersion: searcher.version,
+      executionFingerprint: fingerprint,
+      observability: {
+        informationRegime: "runtime-observation",
+        instrumentationRegime: "inkbench-common",
+        commonCoverageCharged: true,
+      },
       fixtureSeed: request.fixture.manifest.seed,
       searchSeed: request.searchSeed,
       storySeed: request.storySeed,
@@ -139,6 +148,13 @@ export function runBenchmark(request: RunRequest): RunReport {
       timing: {
         wallMs: performance.now() - wallStart,
         cpuMs: (cpu.user + cpu.system) / 1_000,
+        discoveryTimeOrigin: "search-active",
+        phases: {
+          setupMs: searchStarted - wallStart,
+          searchMs: searchEnded - searchStarted,
+          scoringMs: 0,
+          finalizationMs: 0,
+        },
       },
       parallelism: { requested: 1, effective: 1, mode: "single-process" },
       stopReason,
@@ -172,6 +188,12 @@ export function runBenchmark(request: RunRequest): RunReport {
       family: request.fixture.manifest.family,
       algorithm: request.algorithm,
       algorithmVersion: searcher.version,
+      executionFingerprint: fingerprint,
+      observability: {
+        informationRegime: "runtime-observation",
+        instrumentationRegime: "inkbench-common",
+        commonCoverageCharged: true,
+      },
       fixtureSeed: request.fixture.manifest.seed,
       searchSeed: request.searchSeed,
       storySeed: request.storySeed,
@@ -191,7 +213,12 @@ export function runBenchmark(request: RunRequest): RunReport {
       runtimeFindings: controller?.runtimeFindings ?? [],
       plantedBugIds: request.fixture.manifest.bugs.map((bug) => bug.id),
       discoveryTimingBasis: "global-work",
-      timing: { wallMs: performance.now() - wallStart, cpuMs: (cpu.user + cpu.system) / 1_000 },
+      timing: {
+        wallMs: performance.now() - wallStart,
+        cpuMs: (cpu.user + cpu.system) / 1_000,
+        discoveryTimeOrigin: "search-active",
+        phases: { setupMs: null, searchMs: null, scoringMs: null, finalizationMs: null },
+      },
       parallelism: { requested: 1, effective: 1, mode: "single-process" },
       stopReason: "error",
       resources: controller?.resourceUsage("error") ?? null,

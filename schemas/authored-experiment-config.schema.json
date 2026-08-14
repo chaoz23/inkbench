@@ -24,6 +24,9 @@
     "budgetMode": { "enum": ["work", "wall-time"] },
     "workBudgetCeiling": { "type": "integer", "minimum": 1 },
     "storySeed": { "type": "integer", "minimum": 1 },
+    "cellOrder": { "enum": ["configured", "counterbalanced"] },
+    "scheduleSeed": { "type": "integer" },
+    "fixturePartition": { "enum": ["development", "validation", "evaluation"] },
     "inkcheckCommand": { "type": "string", "minLength": 1 },
     "inkcheckOptions": {
       "type": "object",

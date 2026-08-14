@@ -159,6 +159,9 @@ function preset(name: string): ExperimentConfig {
       budgets: [1_000, 3_000, 10_000, 30_000, 100_000, 300_000, 1_000_000, 3_000_000, 10_000_000],
       difficulty: 3,
       storySeed: 1,
+      cellOrder: "counterbalanced",
+      scheduleSeed: 7001,
+      fixturePartition: "validation",
       resources: { maxMemoryMb: 1_536, maxTimeMs: 1_800_000, progressIntervalTransitions: 10_000 },
     };
   }
@@ -167,13 +170,16 @@ function preset(name: string): ExperimentConfig {
       schemaVersion: SCHEMA_VERSION,
       families: ["deep-corridor", "rare-prefix", "combination-lock", "novelty-honeypot", "false-novelty", "delayed-consequence", "order-dependent", "compound-needle"],
       algorithms: ["random", "systematic", "coverage", "swarm", "inkcheck"],
-      fixtureSeeds: [101],
-      searchSeeds: [101, 102, 103],
+      fixtureSeeds: [201, 202, 203],
+      searchSeeds: [501, 502, 503],
       budgets: [name === "marathon-20m" ? 20 * 60 * 1_000 : 60 * 60 * 1_000],
       budgetMode: "wall-time",
       workBudgetCeiling: 100_000_000,
       difficulty: 10,
       storySeed: 1,
+      cellOrder: "counterbalanced",
+      scheduleSeed: 9001,
+      fixturePartition: "evaluation",
       inkcheckOptions: { search: "portfolio", minRepro: false, maxDepth: 1_000, concurrency: 1 },
       resources: { maxMemoryMb: 4_096, progressIntervalTransitions: 10_000, progressIntervalMs: 1_000 },
     };
@@ -204,6 +210,9 @@ function validateConfig(input: unknown): ExperimentConfig {
   if (record.budgetMode !== undefined && record.budgetMode !== "work" && record.budgetMode !== "wall-time") usage("budgetMode must be work or wall-time");
   if (record.budgetMode === "wall-time" && (!Number.isSafeInteger(record.workBudgetCeiling) || (record.workBudgetCeiling ?? 0) < 1)) usage("wall-time configs require a positive workBudgetCeiling");
   if (record.budgetMode === "wall-time" && record.resources?.maxTimeMs !== undefined) usage("wall-time configs cannot also use resources.maxTimeMs");
+  if (record.cellOrder !== undefined && record.cellOrder !== "configured" && record.cellOrder !== "counterbalanced") usage("cellOrder must be configured or counterbalanced");
+  if (record.scheduleSeed !== undefined && !Number.isSafeInteger(record.scheduleSeed)) usage("scheduleSeed must be a safe integer");
+  if (record.fixturePartition !== undefined && !["development", "validation", "evaluation"].includes(record.fixturePartition)) usage("fixturePartition must be development, validation, or evaluation");
   validateResources(record.resources);
   return record as ExperimentConfig;
 }
@@ -343,6 +352,9 @@ function authoredPreset(name: string): AuthoredExperimentConfig {
       searchSeeds: Array.from({ length: 30 }, (_, index) => 101 + index),
       budgets: [1_000, 3_000, 10_000, 30_000, 100_000, 300_000, 1_000_000, 3_000_000, 10_000_000],
       storySeed: 1,
+      cellOrder: "counterbalanced",
+      scheduleSeed: 7101,
+      fixturePartition: "validation",
       resources: { maxMemoryMb: 1_536, maxTimeMs: 1_800_000, progressIntervalTransitions: 10_000 },
     };
   }
@@ -356,6 +368,9 @@ function authoredPreset(name: string): AuthoredExperimentConfig {
       budgetMode: "wall-time",
       workBudgetCeiling: 100_000_000,
       storySeed: 1,
+      cellOrder: "counterbalanced",
+      scheduleSeed: 9101,
+      fixturePartition: "evaluation",
       inkcheckOptions: { search: "portfolio", minRepro: false, maxDepth: 1_000, concurrency: 1 },
       resources: { maxMemoryMb: 4_096, progressIntervalTransitions: 10_000, progressIntervalMs: 1_000 },
     };
@@ -391,6 +406,9 @@ function validateAuthoredConfig(input: unknown): AuthoredExperimentConfig {
   if (record.budgetMode !== undefined && record.budgetMode !== "work" && record.budgetMode !== "wall-time") usage("budgetMode must be work or wall-time");
   if (record.budgetMode === "wall-time" && (!Number.isSafeInteger(record.workBudgetCeiling) || (record.workBudgetCeiling ?? 0) < 1)) usage("wall-time configs require a positive workBudgetCeiling");
   if (record.budgetMode === "wall-time" && record.resources?.maxTimeMs !== undefined) usage("wall-time configs cannot also use resources.maxTimeMs");
+  if (record.cellOrder !== undefined && record.cellOrder !== "configured" && record.cellOrder !== "counterbalanced") usage("cellOrder must be configured or counterbalanced");
+  if (record.scheduleSeed !== undefined && !Number.isSafeInteger(record.scheduleSeed)) usage("scheduleSeed must be a safe integer");
+  if (record.fixturePartition !== undefined && !["development", "validation", "evaluation"].includes(record.fixturePartition)) usage("fixturePartition must be development, validation, or evaluation");
   validateResources(record.resources);
   return record as AuthoredExperimentConfig;
 }
@@ -508,6 +526,9 @@ function mutantPreset(name: string): MutantExperimentConfig {
       searchSeeds: Array.from({ length: 30 }, (_, index) => 101 + index),
       budgets: [1_000, 10_000, 100_000, 1_000_000, 10_000_000],
       storySeed: 1,
+      cellOrder: "counterbalanced",
+      scheduleSeed: 7201,
+      fixturePartition: "validation",
       resources: { maxMemoryMb: 1_536, maxTimeMs: 1_800_000, progressIntervalTransitions: 10_000 },
     };
   }
@@ -521,6 +542,9 @@ function mutantPreset(name: string): MutantExperimentConfig {
       budgetMode: "wall-time",
       workBudgetCeiling: 100_000_000,
       storySeed: 1,
+      cellOrder: "counterbalanced",
+      scheduleSeed: 9201,
+      fixturePartition: "evaluation",
       inkcheckOptions: { search: "portfolio", minRepro: false, maxDepth: 1_000, concurrency: 1 },
       resources: { maxMemoryMb: 4_096, progressIntervalTransitions: 10_000, progressIntervalMs: 1_000 },
     };
@@ -556,6 +580,9 @@ function validateMutantConfig(input: unknown): MutantExperimentConfig {
   if (record.budgetMode !== undefined && record.budgetMode !== "work" && record.budgetMode !== "wall-time") usage("budgetMode must be work or wall-time");
   if (record.budgetMode === "wall-time" && (!Number.isSafeInteger(record.workBudgetCeiling) || (record.workBudgetCeiling ?? 0) < 1)) usage("wall-time configs require a positive workBudgetCeiling");
   if (record.budgetMode === "wall-time" && record.resources?.maxTimeMs !== undefined) usage("wall-time configs cannot also use resources.maxTimeMs");
+  if (record.cellOrder !== undefined && record.cellOrder !== "configured" && record.cellOrder !== "counterbalanced") usage("cellOrder must be configured or counterbalanced");
+  if (record.scheduleSeed !== undefined && !Number.isSafeInteger(record.scheduleSeed)) usage("scheduleSeed must be a safe integer");
+  if (record.fixturePartition !== undefined && !["development", "validation", "evaluation"].includes(record.fixturePartition)) usage("fixturePartition must be development, validation, or evaluation");
   validateResources(record.resources);
   return record as MutantExperimentConfig;
 }

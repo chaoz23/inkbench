@@ -26,6 +26,9 @@
     "workBudgetCeiling": { "type": "integer", "minimum": 1 },
     "difficulty": { "type": "integer", "minimum": 1, "maximum": 10 },
     "storySeed": { "type": "integer", "minimum": 1 },
+    "cellOrder": { "enum": ["configured", "counterbalanced"] },
+    "scheduleSeed": { "type": "integer" },
+    "fixturePartition": { "enum": ["development", "validation", "evaluation"] },
     "inkcheckCommand": { "type": "string", "minLength": 1 },
     "inkcheckOptions": {
       "type": "object",

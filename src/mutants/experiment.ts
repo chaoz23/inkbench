@@ -1,8 +1,11 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { writeFileAtomic, writeNdjsonAtomicFromJsonFiles } from "../core/atomic.js";
+import { benchmarkRunId } from "../core/identity.js";
 import { runBenchmark } from "../core/run.js";
 import { SCHEMA_VERSION, type AlgorithmId, type AuthoredFaultType, type BugFamily, type InkCheckOptions, type ResourceLimits, type RunReport, type RunRequest } from "../core/types.js";
+import { assertSummarizableRuns } from "../core/validation.js";
+import { scheduleAlgorithmBlocks } from "../experiments/schedule.js";
 import { getAuthoredPlantedCorpusManifest, listAuthoredPlantedStories, loadAuthoredPlantedFixture } from "./load.js";
 
 export interface MutantExperimentConfig {
@@ -19,6 +22,9 @@ export interface MutantExperimentConfig {
   inkcheckCommand?: string;
   inkcheckOptions?: InkCheckOptions;
   resources?: ResourceLimits;
+  cellOrder?: "configured" | "counterbalanced";
+  scheduleSeed?: number;
+  fixturePartition?: "development" | "validation" | "evaluation";
 }
 
 export interface BugYieldCell {
@@ -33,7 +39,11 @@ export interface BugYieldCell {
   maxBugsDiscovered: number;
   meanBugFraction: number;
   probabilityAny: number;
+  probabilityAnyInterval95: [number, number];
+  completedProbabilityAny: number | null;
   probabilityAll: number;
+  probabilityAllInterval95: [number, number];
+  completedProbabilityAll: number | null;
   medianTransitionsToFirst: number | null;
   meanWallMs: number;
 }
@@ -48,7 +58,9 @@ export interface PerBugCell {
   runs: number;
   discoveries: number;
   probability: number;
+  interval95: [number, number];
   medianTransitionsToDiscovery: number | null;
+  medianElapsedMsToDiscovery: number | null;
 }
 
 export interface MutantComplementarityCell {
@@ -56,6 +68,8 @@ export interface MutantComplementarityCell {
   budget: number;
   algorithms: AlgorithmId[];
   pairedRuns: number;
+  fullyCompletedRuns: number;
+  resourceAffectedRuns: number;
   bugOpportunities: number;
   unionDiscoveries: number;
   exclusiveDiscoveries: Record<string, number>;
@@ -94,6 +108,14 @@ export interface MutantExperimentResult {
   cellFiles?: string[];
 }
 
+export interface PlannedMutantCell {
+  request: RunRequest;
+  runId: string;
+  storyId: string;
+  block: number;
+  position: number;
+}
+
 function mean(values: number[]): number {
   return values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
 }
@@ -105,6 +127,20 @@ function median(values: number[]): number | null {
   return sorted.length % 2 === 1 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
 }
 
+function wilson95(successes: number, trials: number): [number, number] {
+  if (trials === 0) return [0, 1];
+  const z = 1.959963984540054;
+  const p = successes / trials;
+  const denominator = 1 + (z * z) / trials;
+  const center = (p + (z * z) / (2 * trials)) / denominator;
+  const margin = z * Math.sqrt((p * (1 - p) + (z * z) / (4 * trials)) / trials) / denominator;
+  return [Math.max(0, center - margin), Math.min(1, center + margin)];
+}
+
+function observedRun(run: RunReport): boolean {
+  return run.status === "completed" || run.status === "resource-stopped";
+}
+
 function fixtureId(storyId: string): string {
   return `authored-planted-${storyId}`;
 }
@@ -114,24 +150,31 @@ function bugYieldCells(runs: RunReport[], config: MutantExperimentConfig): BugYi
   for (const storyId of config.storyIds) for (const budget of config.budgets) for (const algorithm of config.algorithms) {
     const matching = runs.filter((run) => run.fixtureId === fixtureId(storyId) && run.budget.limit === budget && run.algorithm === algorithm);
     const completed = matching.filter((run) => run.status === "completed");
+    const observed = matching.filter(observedRun);
     const plantedBugs = matching[0]?.plantedBugIds.length ?? loadAuthoredPlantedFixture(storyId).manifest.bugs.length;
-    const counts = completed.map((run) => run.discoveredBugs.length);
-    const firstTimes = completed.flatMap((run) => run.discoveryTimingBasis === "global-work" && run.discoveredBugs[0] ? [run.discoveredBugs[0].transition] : []);
+    const counts = observed.map((run) => run.discoveredBugs.length);
+    const any = observed.filter((run) => run.discoveredBugs.length > 0).length;
+    const all = observed.filter((run) => run.discoveredBugs.length === plantedBugs).length;
+    const firstTimes = observed.flatMap((run) => run.discoveryTimingBasis === "global-work" && run.discoveredBugs[0] ? [run.discoveredBugs[0].transition] : []);
     cells.push({
       storyId,
       algorithm,
       budget,
-      runs: matching.length,
+      runs: observed.length,
       completed: completed.length,
       plantedBugs,
       meanBugsDiscovered: mean(counts),
       medianBugsDiscovered: median(counts),
       maxBugsDiscovered: counts.length === 0 ? 0 : Math.max(...counts),
       meanBugFraction: plantedBugs === 0 ? 0 : mean(counts) / plantedBugs,
-      probabilityAny: completed.length === 0 ? 0 : completed.filter((run) => run.discoveredBugs.length > 0).length / completed.length,
-      probabilityAll: completed.length === 0 ? 0 : completed.filter((run) => run.discoveredBugs.length === plantedBugs).length / completed.length,
+      probabilityAny: observed.length === 0 ? 0 : any / observed.length,
+      probabilityAnyInterval95: wilson95(any, observed.length),
+      completedProbabilityAny: completed.length === 0 ? null : completed.filter((run) => run.discoveredBugs.length > 0).length / completed.length,
+      probabilityAll: observed.length === 0 ? 0 : all / observed.length,
+      probabilityAllInterval95: wilson95(all, observed.length),
+      completedProbabilityAll: completed.length === 0 ? null : completed.filter((run) => run.discoveredBugs.length === plantedBugs).length / completed.length,
       medianTransitionsToFirst: median(firstTimes),
-      meanWallMs: mean(completed.map((run) => run.timing.wallMs)),
+      meanWallMs: mean(observed.map((run) => run.timing.wallMs)),
     });
   }
   return cells;
@@ -142,12 +185,11 @@ function perBugCells(runs: RunReport[], config: MutantExperimentConfig): PerBugC
   for (const storyId of config.storyIds) {
     const bugs = loadAuthoredPlantedFixture(storyId).manifest.bugs;
     for (const budget of config.budgets) for (const algorithm of config.algorithms) {
-      const completed = runs.filter((run) => run.fixtureId === fixtureId(storyId) && run.budget.limit === budget && run.algorithm === algorithm && run.status === "completed");
+      const observed = runs.filter((run) => run.fixtureId === fixtureId(storyId) && run.budget.limit === budget && run.algorithm === algorithm && observedRun(run));
       for (const bug of bugs) {
-        const discoveries = completed.flatMap((run) => {
-          if (run.discoveryTimingBasis !== "global-work") return [];
+        const discoveries = observed.flatMap((run) => {
           const found = run.discoveredBugs.find((candidate) => candidate.bugId === bug.id);
-          return found ? [found.transition] : [];
+          return found ? [{ run, found }] : [];
         });
         cells.push({
           storyId,
@@ -156,10 +198,12 @@ function perBugCells(runs: RunReport[], config: MutantExperimentConfig): PerBugC
           faultType: bug.faultType,
           algorithm,
           budget,
-          runs: completed.length,
+          runs: observed.length,
           discoveries: discoveries.length,
-          probability: completed.length === 0 ? 0 : discoveries.length / completed.length,
-          medianTransitionsToDiscovery: median(discoveries),
+          probability: observed.length === 0 ? 0 : discoveries.length / observed.length,
+          interval95: wilson95(discoveries.length, observed.length),
+          medianTransitionsToDiscovery: median(discoveries.flatMap(({ run, found }) => run.discoveryTimingBasis === "global-work" ? [found.transition] : [])),
+          medianElapsedMsToDiscovery: median(discoveries.flatMap(({ run, found }) => run.discoveryTimingBasis === "final-only" ? [] : [found.elapsedMs])),
         });
       }
     }
@@ -182,12 +226,22 @@ function complementarityCells(runs: RunReport[], config: MutantExperimentConfig)
     const exclusive = Object.fromEntries(config.algorithms.map((algorithm) => [algorithm, 0]));
     const patterns: Record<string, number> = {};
     let pairedRuns = 0;
+    let fullyCompletedRuns = 0;
+    let resourceAffectedRuns = 0;
     let unionDiscoveries = 0;
     for (const group of paired.values()) {
-      if (!config.algorithms.every((algorithm) => group.get(algorithm)?.status === "completed")) continue;
+      if (!config.algorithms.every((algorithm) => {
+        const run = group.get(algorithm);
+        return run !== undefined && observedRun(run);
+      })) continue;
       pairedRuns += 1;
+      const selected = config.algorithms.map((algorithm) => group.get(algorithm)!);
+      if (selected.every((run) => run.status === "completed")) fullyCompletedRuns += 1;
+      else resourceAffectedRuns += 1;
+      const canUseCommonHorizon = selected.every((run) => run.discoveryTimingBasis !== "final-only");
+      const commonHorizon = Math.min(...selected.map((run) => run.timing.wallMs));
       for (const bug of bugs) {
-        const finders = config.algorithms.filter((algorithm) => group.get(algorithm)!.discoveredBugs.some((discovery) => discovery.bugId === bug.id));
+        const finders = config.algorithms.filter((algorithm) => group.get(algorithm)!.discoveredBugs.some((discovery) => discovery.bugId === bug.id && (!canUseCommonHorizon || discovery.elapsedMs <= commonHorizon)));
         const pattern = finders.length === 0 ? "none" : finders.join("+");
         patterns[pattern] = (patterns[pattern] ?? 0) + 1;
         if (finders.length > 0) unionDiscoveries += 1;
@@ -199,6 +253,8 @@ function complementarityCells(runs: RunReport[], config: MutantExperimentConfig)
       budget,
       algorithms: [...config.algorithms],
       pairedRuns,
+      fullyCompletedRuns,
+      resourceAffectedRuns,
       bugOpportunities: pairedRuns * bugs.length,
       unionDiscoveries,
       exclusiveDiscoveries: exclusive,
@@ -221,8 +277,14 @@ function resourceCells(runs: RunReport[], config: MutantExperimentConfig): Mutan
       completed: matching.filter((run) => run.status === "completed").length,
       resourceStopped: matching.filter((run) => run.status === "resource-stopped").length,
       meanTransitions: mean(matching.map((run) => run.counts.transitions)),
-      meanPeakHeapBytes: measured.length === 0 ? null : mean(measured.map((run) => run.resources!.process.peak.heapUsedBytes)),
-      meanPeakCheckpointBytes: measured.length === 0 ? null : mean(measured.map((run) => run.resources!.snapshots.peakCheckpointBytes)),
+      meanPeakHeapBytes: (() => {
+        const values = measured.flatMap((run) => typeof run.resources!.process.peak?.heapUsedBytes === "number" ? [run.resources!.process.peak.heapUsedBytes] : []);
+        return values.length === 0 ? null : mean(values);
+      })(),
+      meanPeakCheckpointBytes: (() => {
+        const values = measured.flatMap((run) => typeof run.resources!.snapshots?.peakCheckpointBytes === "number" ? [run.resources!.snapshots.peakCheckpointBytes] : []);
+        return values.length === 0 ? null : mean(values);
+      })(),
     });
   }
   return cells;
@@ -244,6 +306,8 @@ function validateConfig(config: MutantExperimentConfig): void {
     throw new RangeError("wall-time mode cannot also set resources.maxTimeMs");
   }
   if (!Number.isSafeInteger(config.storySeed) || config.storySeed < 1) throw new RangeError("storySeed must be a positive safe integer");
+  if (config.cellOrder !== undefined && config.cellOrder !== "configured" && config.cellOrder !== "counterbalanced") throw new RangeError("cellOrder must be configured or counterbalanced");
+  if (config.scheduleSeed !== undefined && !Number.isSafeInteger(config.scheduleSeed)) throw new RangeError("scheduleSeed must be a safe integer");
   const available = new Set(listAuthoredPlantedStories().map((story) => story.id));
   for (const storyId of config.storyIds) if (!available.has(storyId)) throw new RangeError(`unknown authored-planted story: ${storyId}`);
 }
@@ -273,20 +337,32 @@ export function mutantRunRequest(
 export function runMutantExperiment(config: MutantExperimentConfig, onRun?: (report: RunReport, completed: number, total: number) => void): MutantExperimentResult {
   validateConfig(config);
   const runs: RunReport[] = [];
-  const total = config.storyIds.length * config.budgets.length * config.searchSeeds.length * config.algorithms.length;
-  for (const storyId of config.storyIds) {
-    const fixture = loadAuthoredPlantedFixture(storyId);
-    for (const budget of config.budgets) for (const searchSeed of config.searchSeeds) for (const algorithm of config.algorithms) {
-      const report = runBenchmark(mutantRunRequest(config, fixture, algorithm, searchSeed, budget));
-      runs.push(report);
-      onRun?.(report, runs.length, total);
-    }
+  const plan = plannedMutantCells(config);
+  for (const cell of plan) {
+    const report = runBenchmark(cell.request);
+    runs.push(report);
+    onRun?.(report, runs.length, plan.length);
   }
   return { runs, summary: summarizeMutantRuns(runs, config) };
 }
 
+export function plannedMutantCells(config: MutantExperimentConfig): PlannedMutantCell[] {
+  validateConfig(config);
+  const blocks: Array<{ storyId: string; budget: number; searchSeed: number }> = [];
+  for (const storyId of config.storyIds) for (const budget of config.budgets) for (const searchSeed of config.searchSeeds) {
+    blocks.push({ storyId, budget, searchSeed });
+  }
+  const fixtures = new Map(config.storyIds.map((storyId) => [storyId, loadAuthoredPlantedFixture(storyId)]));
+  return scheduleAlgorithmBlocks(blocks, config.algorithms, config.cellOrder, config.scheduleSeed)
+    .map(({ value, algorithm, block, position }) => {
+      const request = mutantRunRequest(config, fixtures.get(value.storyId)!, algorithm, value.searchSeed, value.budget);
+      return { request, runId: benchmarkRunId(request), storyId: value.storyId, block, position };
+    });
+}
+
 export function summarizeMutantRuns(runs: RunReport[], config: MutantExperimentConfig, generatedAt = new Date().toISOString()): MutantExperimentSummary {
   validateConfig(config);
+  assertSummarizableRuns(runs);
   return {
     schemaVersion: SCHEMA_VERSION,
     benchmarkTier: "authored-planted",
@@ -299,8 +375,8 @@ export function summarizeMutantRuns(runs: RunReport[], config: MutantExperimentC
     complementarity: complementarityCells(runs, config),
     resources: resourceCells(runs, config),
     interpretation: config.budgetMode === "wall-time"
-      ? "Each bug is a disclosed mutation of a pinned authored story. Planned wall-time expiry is a completed cell; memory stops and prematurely reached work ceilings remain incomplete and visible in raw data and the resource table."
-      : "Each bug is a disclosed mutation of a pinned authored story. Fixed-work yield excludes incomplete cells; resource-stopped runs remain in raw data and the resource table.",
+      ? "Each bug is a disclosed mutation of a pinned authored story. Planned wall-time expiry is a completed cell. Resource-stopped prefixes contribute to observed-anytime estimates and are labeled separately; they are not fixed-grant completers."
+      : "Each bug is a disclosed mutation of a pinned authored story. Completed and resource-stopped prefixes contribute to observed-anytime estimates and are labeled separately; resource-dependent stopping can be informative.",
   };
 }
 
@@ -318,17 +394,17 @@ export function renderMutantMarkdown(summary: MutantExperimentSummary): string {
     "",
     `Generated: ${summary.generatedAt}`,
     "",
-    `Runs: ${summary.successfulRuns}/${summary.totalRuns} completed. Fixed-budget estimates exclude incomplete cells; resource outcomes remain visible below.`,
+    `Runs: ${summary.successfulRuns}/${summary.totalRuns} completed. Yield below is observed-anytime evidence from completed and resource-stopped prefixes; the resource table separates them.`,
     "",
     "> This tier measures 20 disclosed defects in a deterministic derivative of The Intercept. A run receives credit per distinct oracle, not merely for finding any defect.",
     "",
     "## Bug yield",
     "",
-    "| Story | Algorithm | Budget | Completed | Mean bugs | Median bugs | Max bugs | Mean fraction | P(any) | P(all) | Median first discovery |",
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| Story | Algorithm | Budget | Completed | Mean bugs | Median bugs | Max bugs | Mean fraction | Observed P(any), 95% CI | Completed-only P(any) | Observed P(all), 95% CI | Completed-only P(all) | Median first discovery |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
   ];
   for (const cell of summary.bugYield) {
-    lines.push(`| ${cell.storyId} | ${cell.algorithm} | ${cell.budget} | ${cell.completed}/${cell.runs} | ${format(cell.meanBugsDiscovered)} | ${cell.medianBugsDiscovered ?? "n/a"} | ${cell.maxBugsDiscovered} | ${percent(cell.meanBugFraction)} | ${percent(cell.probabilityAny)} | ${percent(cell.probabilityAll)} | ${cell.medianTransitionsToFirst ?? "n/a"} |`);
+    lines.push(`| ${cell.storyId} | ${cell.algorithm} | ${cell.budget} | ${cell.completed}/${cell.runs} | ${format(cell.meanBugsDiscovered)} | ${cell.medianBugsDiscovered ?? "n/a"} | ${cell.maxBugsDiscovered} | ${percent(cell.meanBugFraction)} | ${percent(cell.probabilityAny)} [${percent(cell.probabilityAnyInterval95[0])}, ${percent(cell.probabilityAnyInterval95[1])}] | ${cell.completedProbabilityAny === null ? "n/a" : percent(cell.completedProbabilityAny)} | ${percent(cell.probabilityAll)} [${percent(cell.probabilityAllInterval95[0])}, ${percent(cell.probabilityAllInterval95[1])}] | ${cell.completedProbabilityAll === null ? "n/a" : percent(cell.completedProbabilityAll)} | ${cell.medianTransitionsToFirst ?? "n/a"} |`);
   }
   lines.push("", "## Per-bug competence map", "");
   for (const storyId of summary.config.storyIds) {
@@ -337,16 +413,16 @@ export function renderMutantMarkdown(summary: MutantExperimentSummary): string {
       const bugs = summary.perBug.filter((cell) => cell.storyId === storyId && cell.budget === budget && cell.algorithm === summary.config.algorithms[0]);
       for (const bug of bugs) {
         const values = summary.config.algorithms.map((algorithm) => summary.perBug.find((cell) => cell.storyId === bug.storyId && cell.bugId === bug.bugId && cell.budget === budget && cell.algorithm === algorithm));
-        lines.push(`| ${bug.bugId} | ${bug.family} | ${bug.faultType} | ${values.map((cell) => cell ? `${percent(cell.probability)} (${cell.discoveries}/${cell.runs})` : "n/a").join(" | ")} |`);
+        lines.push(`| ${bug.bugId} | ${bug.family} | ${bug.faultType} | ${values.map((cell) => cell ? `${percent(cell.probability)} [${percent(cell.interval95[0])}, ${percent(cell.interval95[1])}] (${cell.discoveries}/${cell.runs})` : "n/a").join(" | ")} |`);
       }
       lines.push("");
     }
   }
-  lines.push("## Complementarity", "", "Exclusive discoveries count paired (search seed, bug) opportunities found by exactly one strategy.", "", "| Story | Budget | Paired runs | Union/bug opportunities | Exclusive discoveries | Patterns |", "| --- | ---: | ---: | ---: | --- | --- |");
+  lines.push("## Complementarity", "", "Exclusive discoveries count paired (search seed, bug) opportunities found by exactly one strategy before the shortest observed wall-time horizon in that pair. Resource-affected pairs are labeled separately.", "", "| Story | Budget | Paired runs | Completed pairs | Resource-affected | Union/bug opportunities | Exclusive discoveries | Patterns |", "| --- | ---: | ---: | ---: | ---: | ---: | --- | --- |");
   for (const cell of summary.complementarity) {
     const exclusive = Object.entries(cell.exclusiveDiscoveries).filter(([, count]) => count > 0).map(([algorithm, count]) => `${algorithm}: ${count}`).join(", ") || "none";
     const patterns = Object.entries(cell.discoveryPatternCounts).sort().map(([pattern, count]) => `${pattern}: ${count}`).join(", ") || "none";
-    lines.push(`| ${cell.storyId} | ${cell.budget} | ${cell.pairedRuns} | ${cell.unionDiscoveries}/${cell.bugOpportunities} | ${exclusive} | ${patterns} |`);
+    lines.push(`| ${cell.storyId} | ${cell.budget} | ${cell.pairedRuns} | ${cell.fullyCompletedRuns} | ${cell.resourceAffectedRuns} | ${cell.unionDiscoveries}/${cell.bugOpportunities} | ${exclusive} | ${patterns} |`);
   }
   lines.push("", "## Resource envelope", "", "| Story | Algorithm | Budget | Completed | Resource-stopped | Mean transitions | Peak heap MiB | Peak checkpoints MiB |", "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |");
   for (const cell of summary.resources) {
@@ -389,8 +465,8 @@ export function writeMutantExperiment(outputDirectory: string, result: MutantExp
     run.plantedBugIds.length === 0 ? 0 : run.discoveredBugs.length / run.plantedBugIds.length,
     run.discoveredBugs.map((bug) => bug.bugId).join(";"),
     run.timing.wallMs,
-    run.resources?.process.peak.heapUsedBytes ?? "",
-    run.resources?.snapshots.peakCheckpointBytes ?? "",
+    run.resources?.process.peak?.heapUsedBytes ?? "",
+    run.resources?.snapshots?.peakCheckpointBytes ?? "",
   ]);
   writeFileAtomic(join(outputDirectory, "runs.csv"), `${[headers, ...rows].map((row) => row.map(csv).join(",")).join("\n")}\n`);
   writeFileAtomic(join(outputDirectory, "summary.json"), `${JSON.stringify(result.summary, null, 2)}\n`);

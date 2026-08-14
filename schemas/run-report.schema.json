@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/chaoz23/inkbench/blob/main/schemas/run-report.schema.json",
-  "title": "InkBench run report v3",
+  "title": "InkBench run report v4",
   "type": "object",
-  "required": ["schemaVersion", "runId", "fixtureId", "fixtureGeneratorVersion", "fixtureSourceSha256", "benchmarkTier", "family", "algorithm", "algorithmVersion", "fixtureSeed", "searchSeed", "storySeed", "difficulty", "dimensions", "budget", "workBudget", "counts", "coverage", "coverageItems", "discoveredBugs", "runtimeFindings", "plantedBugIds", "discoveryTimingBasis", "timing", "parallelism", "stopReason", "resources", "runtime", "status", "error", "notes"],
+  "required": ["schemaVersion", "runId", "fixtureId", "fixtureGeneratorVersion", "fixtureSourceSha256", "benchmarkTier", "family", "algorithm", "algorithmVersion", "executionFingerprint", "observability", "fixtureSeed", "searchSeed", "storySeed", "difficulty", "dimensions", "budget", "workBudget", "counts", "coverage", "coverageItems", "discoveredBugs", "runtimeFindings", "plantedBugIds", "discoveryTimingBasis", "timing", "parallelism", "stopReason", "resources", "runtime", "status", "error", "notes"],
   "properties": {
-    "schemaVersion": { "const": 3 },
-    "runId": { "type": "string" },
+    "schemaVersion": { "const": 4 },
+    "runId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
     "fixtureId": { "type": "string" },
     "fixtureGeneratorVersion": { "type": "string" },
     "fixtureSourceSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
@@ -14,6 +14,34 @@
     "family": { "type": "string" },
     "algorithm": { "enum": ["random", "systematic", "coverage", "swarm", "inkcheck"] },
     "algorithmVersion": { "type": "string" },
+    "executionFingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "digest", "harnessArtifactSha256", "packageLockSha256", "algorithmVersion", "algorithmArtifactSha256", "externalCommandSha256", "node", "v8", "platform", "inkRuntimeVersion", "compilerArtifactSha256"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "harnessArtifactSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "packageLockSha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+        "algorithmVersion": { "type": "string" },
+        "algorithmArtifactSha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+        "externalCommandSha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+        "node": { "type": "string" },
+        "v8": { "type": "string" },
+        "platform": { "type": "string" },
+        "inkRuntimeVersion": { "type": "string" },
+        "compilerArtifactSha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "observability": {
+      "type": "object",
+      "required": ["informationRegime", "instrumentationRegime", "commonCoverageCharged"],
+      "properties": {
+        "informationRegime": { "enum": ["runtime-observation", "compiled-artifact", "full-source"] },
+        "instrumentationRegime": { "enum": ["inkbench-common", "external-native", "external-private-signal"] },
+        "commonCoverageCharged": { "type": "boolean" }
+      }
+    },
     "fixtureSeed": { "type": "integer" },
     "searchSeed": { "type": "integer" },
     "storySeed": { "type": "integer", "minimum": 1 },
@@ -59,7 +87,19 @@
     "runtimeFindings": { "type": "array", "items": { "type": "object" } },
     "plantedBugIds": { "type": "array", "items": { "type": "string" } },
     "discoveryTimingBasis": { "enum": ["global-work", "global-wall", "final-only"] },
-    "timing": { "type": "object" },
+    "timing": {
+      "type": "object",
+      "required": ["wallMs", "cpuMs", "discoveryTimeOrigin", "phases"],
+      "properties": {
+        "wallMs": { "type": "number", "minimum": 0 },
+        "cpuMs": { "type": ["number", "null"], "minimum": 0 },
+        "discoveryTimeOrigin": { "enum": ["search-active", "tool-global", "final-report"] },
+        "phases": {
+          "type": "object",
+          "required": ["setupMs", "searchMs", "scoringMs", "finalizationMs"]
+        }
+      }
+    },
     "parallelism": {
       "type": "object",
       "required": ["requested", "effective", "mode"],
@@ -72,21 +112,23 @@
     "stopReason": { "enum": ["budget", "work-ceiling", "search-exhausted", "memory", "time", "cancelled", "error"] },
     "resources": {
       "type": ["object", "null"],
-      "required": ["limits", "stopReason", "process", "snapshots", "coverageIndexBytes", "peakCoverageIndexBytes"],
+      "required": ["provenance", "limits", "stopReason", "process", "snapshots", "coverageIndexBytes", "peakCoverageIndexBytes"],
       "properties": {
+        "provenance": { "enum": ["inkbench-worker", "external-adapter"] },
         "limits": {
           "type": "object",
-          "required": ["memoryCapBytes", "timeCapMs"],
+          "required": ["memoryCapBytes", "searchMemoryLimitBytes", "timeCapMs"],
           "properties": {
-            "memoryCapBytes": { "type": "integer", "minimum": 1 },
+            "memoryCapBytes": { "type": ["integer", "null"], "minimum": 1 },
+            "searchMemoryLimitBytes": { "type": ["integer", "null"], "minimum": 1 },
             "timeCapMs": { "type": ["integer", "null"], "minimum": 1 }
           }
         },
         "stopReason": { "enum": ["budget", "work-ceiling", "search-exhausted", "memory", "time", "cancelled", "error"] },
         "process": { "type": "object", "required": ["peak", "final"] },
-        "snapshots": { "type": "object", "required": ["created", "released", "current", "peak", "explicitReferences", "currentBytes", "peakBytes", "checkpointBytes", "peakCheckpointBytes"] },
-        "coverageIndexBytes": { "type": "integer", "minimum": 0 },
-        "peakCoverageIndexBytes": { "type": "integer", "minimum": 0 }
+        "snapshots": { "type": ["object", "null"], "required": ["created", "released", "current", "peak", "explicitReferences", "currentBytes", "peakBytes", "checkpointBytes", "peakCheckpointBytes"] },
+        "coverageIndexBytes": { "type": ["integer", "null"], "minimum": 0 },
+        "peakCoverageIndexBytes": { "type": ["integer", "null"], "minimum": 0 }
       }
     },
     "runtime": {
@@ -94,7 +136,7 @@
       "required": ["harnessVersion", "runContractVersion", "engine", "engineVersion", "node", "platform"],
       "properties": {
         "harnessVersion": { "type": "string" },
-        "runContractVersion": { "const": "marathon-v3" },
+        "runContractVersion": { "const": "marathon-v4" },
         "engine": { "type": "string" },
         "engineVersion": { "type": "string" },
         "node": { "type": "string" },

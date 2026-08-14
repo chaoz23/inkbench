@@ -134,9 +134,9 @@ inkbench corpus experiment --preset mature --out artifacts/corpus-mature --resum
 inkbench mutants experiment --preset mature --out artifacts/intercept-20-mature --resume
 ```
 
-`mature` implies isolated execution. Each cell writes an atomic `cells/<run-id>.json` and a replace-in-place `progress/<run-id>.json`; `matrix-state.json` and the durable append-only `runs.partial.ndjson` journal survive interruption. Per-cell files are authoritative if the journal's last line is interrupted. `--resume` skips exact completed run IDs. It does **not** claim to resume a search frontier inside an interrupted cell; exact cross-process policy continuation remains future work.
+`mature` implies isolated execution. Each cell writes an atomic `cells/<run-id>.json` and a replace-in-place `progress/<run-id>.json`; `matrix-state.json` and the durable append-only `runs.partial.ndjson` journal survive interruption. Per-cell files are authoritative if the journal's last line is interrupted. `--resume` skips exact completed run IDs only when the frozen schedule and execution fingerprint match. Legacy or mismatched matrices are preserved and require a fresh output directory. It does **not** claim to resume a search frontier inside an interrupted cell; exact cross-process policy continuation remains future work.
 
-Resource-stopped cells remain in raw/resource summaries but are excluded from fixed-transition discovery probability because they did not receive the full requested work. Compare cross-tool runs through wall time, CPU, peak memory, and findings while retaining each tool's native budget unit.
+Resource-stopped cells remain valid observed-prefix evidence. Reports include them in clearly labeled observed-anytime estimates and survival censoring while separating completed fixed-grant cells. Compare cross-tool runs through wall time, CPU, peak memory, and findings while retaining each tool's native budget unit.
 
 ### Marathon protocol
 
@@ -145,7 +145,7 @@ Wall-time is a first-class primary budget, distinct from an emergency guard. Rea
 The 20-minute tier stabilizes measurement, repeatability, resource behavior, and variance. The 60-minute tier changes only duration and is the first tier intended to support comparative claims:
 
 ```sh
-# Hard generated planted cases: 120 serial cells, about 40 hours if none exhaust early.
+# Hard generated planted cases: 360 counterbalanced serial cells in the v4 protocol.
 inkbench experiment --preset marathon-20m --inkcheck-command /absolute/path/to/inkcheck/dist/cli.js --out artifacts/marathon-20m --resume
 
 # Large real authored transfer case: Heresy II, 25 serial cells, at most 8h20m.
@@ -179,7 +179,7 @@ inkbench run \
 
 InkCheck 0.7.2 defaults to **10,000,000 states** (with a 100,000,000 ceiling) and workload-aware automatic concurrency; small exhaustive stories still exit early. That is an important calibration point: InkBench's 100/500-transition cells are cold-start checks, not evidence about mature search behavior. The adapter always passes the matrix's explicit `--max-states`, story seed, memory, and time limits, so it never relies silently on InkCheck's defaults. The main marathon arm fixes `--concurrency 1`, portfolio search, no repro minimization, and depth 1,000 explicitly. Reports record requested and effective parallelism. Separate `marathon-20m-inkcheck-product` and `marathon-60m-inkcheck-product` corpus/mutant presets retain InkCheck's automatic concurrency and other product defaults for sensitivity analysis; do not pool those cells with the one-core arm.
 
-InkCheck's native “states explored” unit is close to, but not identical with, InkBench's choice-transition unit. Reports preserve that distinction and leave unavailable edge/state metrics as `null`. Do not erase the unit label in comparisons. The marathon adapter uses InkCheck's bounded NDJSON evidence stream, records the exact CLI artifact hash, and replays only numeric paths carrying a reserved search-invisible benchmark signal rather than buffering every ending or a monolithic full report. Portfolio `firstDiscoveredAtState` values remain pass-local, but streamed `elapsedMs` values are process-global: InkCheck participates in wall-time survival curves and remains excluded from transition/state-unit survival curves.
+InkCheck's native “states explored” unit is close to, but not identical with, InkBench's choice-transition unit. Reports preserve that distinction and leave unavailable edge/state metrics as `null`. Do not erase the unit label in comparisons. The marathon adapter uses InkCheck's bounded NDJSON evidence stream, records the exact CLI artifact hash, and replays ordinary opaque generated-story ending paths against a private instrumented artifact. Generated search input contains no oracle variables, marker/signal tags, semantic endpoint names, fixture IDs, or removal-site breadcrumbs. Portfolio `firstDiscoveredAtState` values remain pass-local, but streamed `elapsedMs` values are process-global: InkCheck participates in wall-time survival curves and remains excluded from transition/state-unit survival curves. Reports also label InkCheck's full-source information regime, which differs from the common runtime-observation regime used in process.
 
 ## Experiment outputs
 
@@ -199,7 +199,7 @@ artifacts/quick/
 
 `runs.ndjson` is the authoritative cell-level dataset. `summary.json` includes probability and Kaplan–Meier-style survival points. `summary.md` renders family competence and complementarity tables. Timings naturally vary; choices, discoveries, budgets, coverage counts, and witnesses are deterministic for pinned versions and seeds.
 
-Run reports use schema v2 and include a `resources` section. Versioned progress events and resumable matrix-state schemas live beside the other contracts in [`schemas/`](schemas).
+Run reports use schema v4 and include execution fingerprints, observability contracts, phase-aware timing, and resource provenance. Matrix-state schema v2 binds the full ordered run-ID schedule. Versioned progress events and resumable schemas live beside the other contracts in [`schemas/`](schemas).
 
 The versioned JSON schemas live in [`schemas/`](schemas), and the contribution path for another strategy or external tool is documented in [adding a searcher](docs/adding-a-searcher.md).
 

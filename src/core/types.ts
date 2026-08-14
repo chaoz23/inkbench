@@ -1,8 +1,8 @@
 export const SCHEMA_VERSION = 1 as const;
-export const RUN_REPORT_SCHEMA_VERSION = 3 as const;
+export const RUN_REPORT_SCHEMA_VERSION = 4 as const;
 export const PROGRESS_SCHEMA_VERSION = 2 as const;
 export const INKBENCH_VERSION = "0.1.0" as const;
-export const RUN_CONTRACT_VERSION = "marathon-v3" as const;
+export const RUN_CONTRACT_VERSION = "marathon-v4" as const;
 
 export type BugFamily =
   | "shallow-obvious"
@@ -103,7 +103,7 @@ export interface AuthoredPlantedBug extends PlantedBug {
 
 export interface FixtureManifest {
   schemaVersion: typeof SCHEMA_VERSION;
-  generatorVersion: "0.1.0";
+  generatorVersion: "0.2.0";
   fixtureId: string;
   family: BugFamily;
   seed: number;
@@ -297,6 +297,14 @@ export interface InkCheckOptions {
 export interface RunTiming {
   wallMs: number;
   cpuMs: number | null;
+  /** Clock used by BugDiscovery.elapsedMs. */
+  discoveryTimeOrigin: "search-active" | "tool-global" | "final-report";
+  phases: {
+    setupMs: number | null;
+    searchMs: number | null;
+    scoringMs: number | null;
+    finalizationMs: number | null;
+  };
 }
 
 export type ResourceStopReason = "budget" | "work-ceiling" | "search-exhausted" | "memory" | "time" | "cancelled" | "error";
@@ -332,18 +340,51 @@ export interface SnapshotMemoryUsage {
 }
 
 export interface ResourceUsage {
+  provenance: "inkbench-worker" | "external-adapter";
   limits: {
-    memoryCapBytes: number;
+    memoryCapBytes: number | null;
+    searchMemoryLimitBytes: number | null;
     timeCapMs: number | null;
   };
   stopReason: ResourceStopReason;
   process: {
-    peak: ProcessMemoryUsage;
-    final: ProcessMemoryUsage;
+    peak: {
+      heapUsedBytes: number | null;
+      rssBytes: number | null;
+      externalBytes: number | null;
+      arrayBuffersBytes: number | null;
+    } | null;
+    final: {
+      heapUsedBytes: number | null;
+      rssBytes: number | null;
+      externalBytes: number | null;
+      arrayBuffersBytes: number | null;
+    } | null;
   };
-  snapshots: SnapshotMemoryUsage;
-  coverageIndexBytes: number;
-  peakCoverageIndexBytes: number;
+  snapshots: SnapshotMemoryUsage | null;
+  coverageIndexBytes: number | null;
+  peakCoverageIndexBytes: number | null;
+}
+
+export interface ExecutionFingerprint {
+  schemaVersion: 1;
+  digest: string;
+  harnessArtifactSha256: string;
+  packageLockSha256: string | null;
+  algorithmVersion: string;
+  algorithmArtifactSha256: string | null;
+  externalCommandSha256: string | null;
+  node: string;
+  v8: string;
+  platform: string;
+  inkRuntimeVersion: string;
+  compilerArtifactSha256: string | null;
+}
+
+export interface ObservabilityContract {
+  informationRegime: "runtime-observation" | "compiled-artifact" | "full-source";
+  instrumentationRegime: "inkbench-common" | "external-native" | "external-private-signal";
+  commonCoverageCharged: boolean;
 }
 
 export interface RunProgressEvent {
@@ -383,6 +424,8 @@ export interface RunReport {
   family: BenchmarkFamily;
   algorithm: AlgorithmId;
   algorithmVersion: string;
+  executionFingerprint: ExecutionFingerprint;
+  observability: ObservabilityContract;
   fixtureSeed: number;
   searchSeed: number;
   storySeed: number;
@@ -448,6 +491,10 @@ export interface ExperimentConfig {
   workBudgetCeiling?: number;
   difficulty: number;
   storySeed: number;
+  /** Deterministic serial execution policy. Marathon presets must use counterbalanced. */
+  cellOrder?: "configured" | "counterbalanced";
+  scheduleSeed?: number;
+  fixturePartition?: "development" | "validation" | "evaluation";
   inkcheckCommand?: string;
   inkcheckOptions?: InkCheckOptions;
   resources?: ResourceLimits;
@@ -458,8 +505,14 @@ export interface ProbabilityCell {
   algorithm: AlgorithmId;
   budget: number;
   runs: number;
+  completedRuns: number;
+  resourceStoppedRuns: number;
   discoveries: number;
+  /** Observed-anytime discovery probability over valid launched cells. */
   probability: number;
+  interval95: { lower: number; upper: number };
+  completedDiscoveries: number;
+  completedProbability: number | null;
   medianTransitionsToDiscovery: number | null;
   medianElapsedMsToDiscovery: number | null;
   meanWallMs: number;
@@ -473,6 +526,8 @@ export interface SurvivalPoint {
   transition: number;
   atRisk: number;
   discoveries: number;
+  censored: number;
+  resourceStops: number;
   survival: number;
 }
 
@@ -483,6 +538,8 @@ export interface SurvivalTimePoint {
   elapsedMs: number;
   atRisk: number;
   discoveries: number;
+  censored: number;
+  resourceStops: number;
   survival: number;
 }
 
@@ -491,6 +548,8 @@ export interface ComplementarityCell {
   budget: number;
   algorithms: AlgorithmId[];
   runsCompared: number;
+  fullyCompletedRuns: number;
+  resourceAffectedRuns: number;
   discoveryPatternCounts: Record<string, number>;
   exclusiveDiscoveries: Record<string, number>;
   unionDiscoveries: number;

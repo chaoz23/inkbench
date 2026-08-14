@@ -7,7 +7,7 @@
   "required": ["schemaVersion", "generatorVersion", "fixtureId", "family", "seed", "difficulty", "dimensions", "parameters", "locations", "bugs"],
   "properties": {
     "schemaVersion": { "const": 1 },
-    "generatorVersion": { "const": "0.1.0" },
+    "generatorVersion": { "const": "0.2.0" },
     "fixtureId": { "type": "string", "minLength": 1 },
     "family": { "$ref": "#/$defs/family" },
     "seed": { "type": "integer" },

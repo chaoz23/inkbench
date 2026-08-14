@@ -7,6 +7,9 @@
   "budgetMode": "wall-time",
   "workBudgetCeiling": 100000000,
   "storySeed": 1,
+  "cellOrder": "counterbalanced",
+  "scheduleSeed": 9101,
+  "fixturePartition": "evaluation",
   "inkcheckOptions": {
     "search": "portfolio",
     "minRepro": false,

@@ -293,8 +293,10 @@ export class InstrumentedController {
     const finalCoverageBytes = this.coverageIndexBytes;
     this.peakCoverageBytes = Math.max(this.peakCoverageBytes, finalCoverageBytes);
     return {
+      provenance: "inkbench-worker",
       limits: {
         memoryCapBytes: this.guards.memoryCapBytes,
+        searchMemoryLimitBytes: this.guards.memoryCapBytes,
         timeCapMs: this.guards.timeCapMs,
       },
       stopReason,

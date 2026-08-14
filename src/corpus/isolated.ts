@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { appendLineDurable, writeFileAtomic, writeJsonAtomic } from "../core/atomic.js";
-import { benchmarkRunId } from "../core/identity.js";
+import { hash } from "../core/hash.js";
 import { runBenchmarkIsolated, type IsolatedRunOptions } from "../core/isolated.js";
 import type { AlgorithmId, RunReport } from "../core/types.js";
-import { loadAuthoredFixture } from "./load.js";
-import { authoredRunRequest, summarizeAuthoredRuns, type AuthoredComplementarityCell, type AuthoredExperimentConfig, type AuthoredExperimentResult } from "./experiment.js";
+import { assertMatrixIdentity } from "../core/validation.js";
+import { plannedAuthoredCells, summarizeAuthoredRuns, type AuthoredComplementarityCell, type AuthoredExperimentConfig, type AuthoredExperimentResult } from "./experiment.js";
 
 export interface IsolatedAuthoredExperimentOptions extends Omit<IsolatedRunOptions, "latestProgressPath"> {
   outputDirectory: string;
@@ -25,6 +25,8 @@ function streamingComplementarity(cellFiles: string[], config: AuthoredExperimen
   interface Accumulator {
     algorithms: Set<AlgorithmId>;
     pairedRuns: number;
+    fullyCompletedRuns: number;
+    resourceAffectedRuns: number;
     unionLocations: number;
     unionEdges: number;
     exclusiveLocations: Record<string, number>;
@@ -36,6 +38,8 @@ function streamingComplementarity(cellFiles: string[], config: AuthoredExperimen
     accumulators.set(`${storyId}\u0000${budget}`, {
       algorithms: new Set(),
       pairedRuns: 0,
+      fullyCompletedRuns: 0,
+      resourceAffectedRuns: 0,
       unionLocations: 0,
       unionEdges: 0,
       exclusiveLocations: {},
@@ -64,7 +68,9 @@ function streamingComplementarity(cellFiles: string[], config: AuthoredExperimen
     const comparable = config.algorithms.filter((algorithm) => comparableByCell.get(cellKey)!.has(algorithm));
     for (const algorithm of comparable) accumulator.algorithms.add(algorithm);
     const selected = comparable.map((algorithm) => group.find((run) => run.algorithm === algorithm));
-    if (comparable.length < 2 || selected.some((run) => run?.status !== "completed" || run.coverageItems === null)) return;
+    if (comparable.length < 2 || selected.some((run) => run === undefined || (run.status !== "completed" && run.status !== "resource-stopped") || run.coverageItems === null)) return;
+    if (selected.every((run) => run!.status === "completed")) accumulator.fullyCompletedRuns += 1;
+    else accumulator.resourceAffectedRuns += 1;
     const locationSets = selected.map((run) => new Set(run!.coverageItems!.locations));
     const edgeSets = selected.map((run) => new Set(run!.coverageItems!.edges));
     accumulator.unionLocations += new Set(locationSets.flatMap((set) => [...set])).size;
@@ -103,6 +109,8 @@ function streamingComplementarity(cellFiles: string[], config: AuthoredExperimen
       budget,
       algorithms,
       pairedRuns: accumulator.pairedRuns,
+      fullyCompletedRuns: accumulator.fullyCompletedRuns,
+      resourceAffectedRuns: accumulator.resourceAffectedRuns,
       meanUnionLocations: accumulator.pairedRuns > 0 ? accumulator.unionLocations / accumulator.pairedRuns : 0,
       meanUnionEdges: accumulator.pairedRuns > 0 ? accumulator.unionEdges / accumulator.pairedRuns : 0,
       meanExclusiveLocations: meanRecord(algorithms, accumulator.exclusiveLocations, accumulator.pairedRuns),
@@ -122,15 +130,17 @@ function readCompleted(path: string, expectedRunId: string): RunReport | null {
   }
 }
 
-function persistPartial(outputDirectory: string, config: AuthoredExperimentConfig, runs: RunReport[], total: number): void {
+function persistPartial(outputDirectory: string, config: AuthoredExperimentConfig, runs: RunReport[], total: number, experimentFingerprint: string, scheduledRunIds: string[]): void {
   writeJsonAtomic(join(outputDirectory, "matrix-state.json"), {
-    schemaVersion: 1,
+    schemaVersion: 2,
     benchmarkTier: "authored-project",
     status: runs.length === total ? "complete" : "running",
     completedCells: runs.length,
     totalCells: total,
     config,
     runIds: runs.map((run) => run.runId),
+    experimentFingerprint,
+    scheduledRunIds,
   });
 }
 
@@ -140,43 +150,48 @@ export async function runAuthoredExperimentIsolated(
 ): Promise<AuthoredExperimentResult> {
   const runs: RunReport[] = [];
   const cellFiles: string[] = [];
-  const total = config.storyIds.length * config.searchSeeds.length * config.algorithms.length * config.budgets.length;
+  const plan = plannedAuthoredCells(config);
+  const total = plan.length;
+  const scheduledRunIds = plan.map((cell) => cell.runId);
+  const experimentFingerprint = hash({ benchmarkTier: "authored-project", config, scheduledRunIds }, 64);
   const cellsDirectory = join(options.outputDirectory, "cells");
   const progressDirectory = join(options.outputDirectory, "progress");
   mkdirSync(cellsDirectory, { recursive: true });
   mkdirSync(progressDirectory, { recursive: true });
+  const matrixStatePath = join(options.outputDirectory, "matrix-state.json");
+  if (options.resume && existsSync(matrixStatePath)) {
+    const previous = JSON.parse(readFileSync(matrixStatePath, "utf8")) as { schemaVersion?: number; experimentFingerprint?: string; scheduledRunIds?: string[] };
+    assertMatrixIdentity(previous, { schemaVersion: 2, config, experimentFingerprint, scheduledRunIds }, "authored matrix");
+  }
   writeJsonAtomic(join(options.outputDirectory, "config.json"), config);
   const partialRunsPath = join(options.outputDirectory, "runs.partial.ndjson");
   if (!options.resume || !existsSync(partialRunsPath)) writeFileAtomic(partialRunsPath, "");
 
-  for (const storyId of config.storyIds) {
-    const fixture = loadAuthoredFixture(storyId);
-    for (const budget of config.budgets) for (const searchSeed of config.searchSeeds) for (const algorithm of config.algorithms) {
-      const request = authoredRunRequest(config, fixture, algorithm, searchSeed, budget);
-      const runId = benchmarkRunId(request);
-      const cellPath = join(cellsDirectory, `${runId}.json`);
-      const saved = options.resume ? readCompleted(cellPath, runId) : null;
-      if (saved) {
-        cellFiles.push(cellPath);
-        runs.push(options.retainCoverageItems === false ? { ...saved, coverageItems: null } : saved);
-        persistPartial(options.outputDirectory, config, runs, total);
-        options.onRun?.(saved, runs.length, total, true);
-        continue;
-      }
-      const report = await runBenchmarkIsolated(request, {
-        ...(options.heapLimitMb === undefined ? {} : { heapLimitMb: options.heapLimitMb }),
-        ...(options.hardTimeoutMs === undefined ? {} : { hardTimeoutMs: options.hardTimeoutMs }),
-        latestProgressPath: join(progressDirectory, `${runId}.json`),
-        ...(options.onProgress ? { onProgress: options.onProgress } : {}),
-      });
-      writeJsonAtomic(cellPath, report);
+  for (const planned of plan) {
+    const request = planned.request;
+    const runId = planned.runId;
+    const cellPath = join(cellsDirectory, `${runId}.json`);
+    const saved = options.resume ? readCompleted(cellPath, runId) : null;
+    if (saved) {
       cellFiles.push(cellPath);
-      const retainedReport = options.retainCoverageItems === false ? { ...report, coverageItems: null } : report;
-      runs.push(retainedReport);
-      appendLineDurable(partialRunsPath, JSON.stringify(retainedReport));
-      persistPartial(options.outputDirectory, config, runs, total);
-      options.onRun?.(report, runs.length, total, false);
+      runs.push(options.retainCoverageItems === false ? { ...saved, coverageItems: null } : saved);
+      persistPartial(options.outputDirectory, config, runs, total, experimentFingerprint, scheduledRunIds);
+      options.onRun?.(saved, runs.length, total, true);
+      continue;
     }
+    const report = await runBenchmarkIsolated(request, {
+      ...(options.heapLimitMb === undefined ? {} : { heapLimitMb: options.heapLimitMb }),
+      ...(options.hardTimeoutMs === undefined ? {} : { hardTimeoutMs: options.hardTimeoutMs }),
+      latestProgressPath: join(progressDirectory, `${runId}.json`),
+      ...(options.onProgress ? { onProgress: options.onProgress } : {}),
+    });
+    writeJsonAtomic(cellPath, report);
+    cellFiles.push(cellPath);
+    const retainedReport = options.retainCoverageItems === false ? { ...report, coverageItems: null } : report;
+    runs.push(retainedReport);
+    appendLineDurable(partialRunsPath, JSON.stringify(retainedReport));
+    persistPartial(options.outputDirectory, config, runs, total, experimentFingerprint, scheduledRunIds);
+    options.onRun?.(report, runs.length, total, false);
   }
   const summary = summarizeAuthoredRuns(runs, config);
   if (options.retainCoverageItems === false) summary.complementarity = streamingComplementarity(cellFiles, config);

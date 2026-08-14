@@ -6,10 +6,10 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { spawnSync } from "node:child_process";
 import { Story } from "inkjs/full";
 import { fixtureSourceHash } from "../core/hash.js";
-import { benchmarkRunId } from "../core/identity.js";
+import { benchmarkRunId, executionFingerprint } from "../core/identity.js";
 import { parseInkJson } from "../core/ink-json.js";
 import { compiledFixtureStory } from "../core/runtime.js";
-import { INKBENCH_VERSION, RUN_CONTRACT_VERSION, RUN_REPORT_SCHEMA_VERSION, type BugDiscovery, type ResourceStopReason, type RunReport, type RunRequest } from "../core/types.js";
+import { INKBENCH_VERSION, RUN_CONTRACT_VERSION, RUN_REPORT_SCHEMA_VERSION, type BugDiscovery, type ResourceStopReason, type ResourceUsage, type RunReport, type RunRequest } from "../core/types.js";
 
 interface InkCheckEnding {
   choiceIndices?: number[];
@@ -21,6 +21,7 @@ interface InkCheckEnding {
 
 interface InkCheckReport {
   inkcheckVersion?: string;
+  elapsedMs?: number;
   effectiveConfiguration?: { concurrency?: number; concurrencyMode?: string };
   compile?: { success?: boolean };
   resources?: { peakMemoryBytes?: number; memoryCapBytes?: number; memorySearchLimitBytes?: number };
@@ -59,8 +60,8 @@ function escaped(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Remove private oracle state while retaining a search-invisible scoring tag. */
-export function oracleNeutralInkSource(source: string, request: RunRequest, declareSignalMode = true): string {
+/** Remove private oracle state. Signal mode is reserved for disclosed authored-mutation transport. */
+export function oracleNeutralInkSource(source: string, request: RunRequest, declareSignalMode = true, emitSignals = true): string {
   const variables = request.fixture.manifest.bugs.map((bug) => escaped(bug.oracle.variable));
   if (variables.length === 0) return source;
   const names = variables.join("|");
@@ -69,17 +70,17 @@ export function oracleNeutralInkSource(source: string, request: RunRequest, decl
   const markerTag = /^\s*#\s*INKBENCH_BUG:/;
   const signalByVariable = new Map(request.fixture.manifest.bugs.map((bug, index) => [bug.oracle.variable, { index, value: bug.oracle.value }]));
   const neutral = source.split("\n").map((line) => {
-    if (declaration.test(line) || markerTag.test(line)) return "// InkBench oracle marker removed from search input";
+    if (declaration.test(line) || markerTag.test(line)) return "";
     const assigned = assignment.exec(line);
     if (!assigned) return line;
     const signal = signalByVariable.get(assigned[2]!);
     const rhs = assigned[3]!.replace(/\/\/.*$/, "").trim();
     const expected = signal?.value === true ? "true" : signal?.value === false ? "false" : String(signal?.value);
-    return signal && rhs.toLowerCase() === expected.toLowerCase()
+    return signal && rhs.toLowerCase() === expected.toLowerCase() && emitSignals
       ? `${assigned[1]}# INKBENCH_SIGNAL:${signal.index}`
-      : `${assigned[1]}// InkBench oracle assignment removed from search input`;
+      : "";
   }).join("\n");
-  return declareSignalMode ? `# INKBENCH_SIGNAL_MODE\n${neutral}` : neutral;
+  return declareSignalMode && emitSignals ? `# INKBENCH_SIGNAL_MODE\n${neutral}` : neutral;
 }
 
 interface ReplayResult {
@@ -234,6 +235,7 @@ function parseInkCheckReport(path: string, request: RunRequest): {
     if (inkcheckVersion !== undefined) parsed.inkcheckVersion = inkcheckVersion;
     if (effectiveConfiguration !== undefined) parsed.effectiveConfiguration = effectiveConfiguration;
     if (final.compile !== undefined) parsed.compile = final.compile;
+    if (final.elapsedMs !== undefined) parsed.elapsedMs = final.elapsedMs;
     if (final.resources !== undefined) parsed.resources = final.resources;
     if (explore) {
       parsed.explore = {
@@ -312,6 +314,7 @@ function failedAdapterRun(
   message: string,
   status: "adapter-unavailable" | "runtime-error",
 ): RunReport {
+  const fingerprint = executionFingerprint(request);
   const primaryBudget = request.timeBudgetMs === undefined
     ? { unit: "inkcheck-states" as const, limit: request.budget }
     : { unit: "wall-ms" as const, limit: request.timeBudgetMs };
@@ -325,6 +328,12 @@ function failedAdapterRun(
     family: request.fixture.manifest.family,
     algorithm: "inkcheck",
     algorithmVersion: status === "adapter-unavailable" ? "unavailable" : "unknown",
+    executionFingerprint: fingerprint,
+    observability: {
+      informationRegime: "full-source",
+      instrumentationRegime: request.fixture.tier === "authored-planted" ? "external-private-signal" : "external-native",
+      commonCoverageCharged: false,
+    },
     fixtureSeed: request.fixture.manifest.seed,
     searchSeed: request.searchSeed,
     storySeed: request.storySeed,
@@ -339,7 +348,12 @@ function failedAdapterRun(
     runtimeFindings: [],
     plantedBugIds: request.fixture.manifest.bugs.map((bug) => bug.id),
     discoveryTimingBasis: "final-only",
-    timing: { wallMs, cpuMs: null },
+    timing: {
+      wallMs,
+      cpuMs: null,
+      discoveryTimeOrigin: "final-report",
+      phases: { setupMs: null, searchMs: null, scoringMs: null, finalizationMs: null },
+    },
     parallelism: { requested: request.inkcheckOptions === undefined ? 1 : request.inkcheckOptions.concurrency ?? "auto", effective: null, mode: status === "adapter-unavailable" ? "unavailable" : "external-process-failed" },
     stopReason: "error",
     resources: null,
@@ -349,6 +363,35 @@ function failedAdapterRun(
     notes: status === "adapter-unavailable"
       ? ["Install InkCheck or pass --inkcheck-command. Missing adapter metrics are null, not zero."]
       : ["InkCheck started but did not produce a parseable final report. This is explicit external-process failure evidence, not a zero-discovery result."],
+  };
+}
+
+function inkcheckResourceUsage(parsed: InkCheckReport, request: RunRequest, stopReason: ResourceStopReason): ResourceUsage | null {
+  const peakHeap = parsed.resources?.peakMemoryBytes ?? null;
+  const configuredCap = request.resources?.maxMemoryMb === undefined ? null : request.resources.maxMemoryMb * 1024 * 1024;
+  const memoryCapBytes = parsed.resources?.memoryCapBytes ?? configuredCap;
+  const searchMemoryLimitBytes = parsed.resources?.memorySearchLimitBytes ?? memoryCapBytes;
+  if (peakHeap === null && memoryCapBytes === null && searchMemoryLimitBytes === null) return null;
+  return {
+    provenance: "external-adapter",
+    limits: {
+      memoryCapBytes,
+      searchMemoryLimitBytes,
+      timeCapMs: request.timeBudgetMs ?? request.resources?.maxTimeMs ?? null,
+    },
+    stopReason,
+    process: {
+      peak: peakHeap === null ? null : {
+        heapUsedBytes: peakHeap,
+        rssBytes: null,
+        externalBytes: null,
+        arrayBuffersBytes: null,
+      },
+      final: null,
+    },
+    snapshots: null,
+    coverageIndexBytes: null,
+    peakCoverageIndexBytes: null,
   };
 }
 
@@ -371,13 +414,14 @@ function childNodeOptions(memoryCapMb: number | undefined): { env?: NodeJS.Proce
 }
 
 export function runInkCheckAdapter(request: RunRequest): RunReport {
-  const runId = benchmarkRunId(request);
+  const fingerprint = executionFingerprint(request);
+  const runId = benchmarkRunId(request, fingerprint);
   const started = performance.now();
   const scratch = mkdtempSync(join(tmpdir(), "inkbench-inkcheck-"));
   try {
     const entrypoint = request.fixture.tier !== "generated-planted"
       ? request.fixture.sourceBundle.entrypoint
-      : `${request.fixture.manifest.fixtureId}.ink`;
+      : "story.ink";
     if (request.fixture.tier !== "generated-planted") {
       for (const [relativePath, contents] of Object.entries(request.fixture.sourceBundle.files)) {
         const target = scratchPath(scratch, relativePath);
@@ -386,7 +430,7 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
       }
     }
     const storyPath = scratchPath(scratch, entrypoint);
-    if (request.fixture.tier === "generated-planted") writeFileSync(storyPath, oracleNeutralInkSource(request.fixture.source, request), "utf8");
+    if (request.fixture.tier === "generated-planted") writeFileSync(storyPath, oracleNeutralInkSource(request.fixture.source, request, false, false), "utf8");
     const configured = request.inkcheckCommand ?? "inkcheck";
     const adapterDefaults = request.inkcheckOptions === undefined;
     const inkcheckOptions = request.inkcheckOptions ?? { minRepro: false, maxDepth: 1_000, concurrency: 1 };
@@ -454,6 +498,7 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
     let parsed: InkCheckReport;
     let replay: ReplayResult;
     let transport: "bounded-stream" | "full-json";
+    const scoringStarted = performance.now();
     try {
       ({ parsed, replay, transport } = parseInkCheckReport(stdoutPath, request));
     } catch (error) {
@@ -461,6 +506,7 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
       const detail = child.error?.message || stderr.trim() || parseError || `exit status ${child.status ?? "unknown"}`;
       return failedAdapterRun(request, runId, childWallMs, `InkCheck returned no complete evidence report: ${detail.slice(0, 1_000)}`, "runtime-error");
     }
+    const scoringEnded = performance.now();
     const truncated = parsed.explore?.truncatedBy;
     const stopReason: ResourceStopReason = truncated?.memory
       ? "memory"
@@ -493,6 +539,12 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
       family: request.fixture.manifest.family,
       algorithm: "inkcheck",
       algorithmVersion: engineVersion,
+      executionFingerprint: fingerprint,
+      observability: {
+        informationRegime: "full-source",
+        instrumentationRegime: request.fixture.tier === "authored-planted" ? "external-private-signal" : "external-native",
+        commonCoverageCharged: false,
+      },
       fixtureSeed: request.fixture.manifest.seed,
       searchSeed: request.searchSeed,
       storySeed: request.storySeed,
@@ -512,14 +564,24 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
       runtimeFindings: [],
       plantedBugIds: request.fixture.manifest.bugs.map((bug) => bug.id),
       discoveryTimingBasis: transport === "bounded-stream" ? "global-wall" : "final-only",
-      timing: { wallMs, cpuMs: null },
+      timing: {
+        wallMs,
+        cpuMs: null,
+        discoveryTimeOrigin: transport === "bounded-stream" ? "tool-global" : "final-report",
+        phases: {
+          setupMs: null,
+          searchMs: parsed.elapsedMs ?? null,
+          scoringMs: scoringEnded - scoringStarted,
+          finalizationMs: null,
+        },
+      },
       parallelism: {
         requested: inkcheckOptions.concurrency ?? "auto",
         effective: parsed.explore?.execution?.effectiveConcurrency ?? parsed.effectiveConfiguration?.concurrency ?? null,
         mode: parsed.explore?.execution?.mode ?? parsed.effectiveConfiguration?.concurrencyMode ?? "unknown",
       },
       stopReason: compileFailed || processFailed ? "error" : stopReason,
-      resources: null,
+      resources: inkcheckResourceUsage(parsed, request, stopReason),
       runtime: {
         harnessVersion: INKBENCH_VERSION,
         runContractVersion: RUN_CONTRACT_VERSION,
@@ -536,7 +598,9 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
         `InkCheck ${transport === "bounded-stream" ? "bounded NDJSON evidence stream" : "legacy full JSON report"} size was ${reportBytes} bytes.`,
         `Stream-parsed ${replay.paths} replay witnesses and replayed ${replay.transitions} unique ordered-prefix transitions (${replay.divergences} path divergences).`,
         ...(cliSha256 ? [`Pinned InkCheck CLI artifact SHA-256 ${cliSha256}.`] : []),
-        "Removed planted-oracle variables and assignments from InkCheck's search state; scored only reserved numeric signal paths by replay against the pinned instrumented artifact.",
+        ...(request.fixture.tier === "generated-planted"
+          ? ["Removed planted-oracle variables, assignments, marker tags, fixture identity, and semantic target labels from InkCheck's source; scored neutral ending paths by replay against the pinned private artifact."]
+          : ["Removed planted-oracle variables and assignments from InkCheck's search state; scored private signal paths by replay against the pinned instrumented artifact."]),
         ...(adapterDefaults ? ["Used InkBench's default scientific adapter profile: one-core portfolio search, no repro minimization, and max depth 1,000."] : ["Used explicitly recorded InkCheck product/search options."]),
         ...(request.resources?.maxMemoryMb === undefined ? [] : [`Forwarded the ${request.resources.maxMemoryMb} MiB memory guard to InkCheck.`]),
         ...(childRuntime.heapLimitMb === undefined ? [] : [`Launched InkCheck with a ${childRuntime.heapLimitMb} MiB V8 old-space envelope so its ${request.resources!.maxMemoryMb} MiB cooperative guard can stop before an uncatchable heap abort.`]),
@@ -547,7 +611,7 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
         ...(transport === "bounded-stream"
           ? ["Used InkCheck's globally elapsed evidence timestamps for wall-time survival analysis; pass-local state positions remain excluded from work-unit survival curves."]
           : ["InkCheck portfolio finding positions are pass-local, so discovery timing is final-only and must not enter survival curves."]),
-        "InkCheck does not expose the full InkBench empirical edge/state metric set, so coverage is null.",
+        "InkCheck does not expose the full InkBench empirical edge/state metric set, so coverage is null; its native heap telemetry is retained separately with external-adapter provenance.",
       ],
     };
   } finally {

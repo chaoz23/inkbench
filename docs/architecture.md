@@ -64,7 +64,7 @@ The default memory watermark is 85% of the worker's V8 heap ceiling unless an ex
 
 Process peak heap/RSS is measured independently from accounted Ink snapshot, policy-checkpoint, and coverage-index payload. Accounted bytes are deterministic UTF-8 payload measures; process memory includes runtime, compiler, object, allocator, and garbage-collector overhead and is therefore the authoritative safety boundary.
 
-Experiment isolation persists the latest progress snapshot and one atomic report per completed cell. Matrix resume skips completed run IDs. Search-frontier continuation within a killed cell is deliberately not claimed until every compared search policy has a versioned exact checkpoint contract.
+Experiment isolation persists the latest progress snapshot and one atomic report per completed cell. Before any cell starts, InkBench freezes the complete ordered run-ID schedule and an experiment fingerprint. Resume is accepted only when schema, config, order, and fingerprint match exactly; legacy or mismatched directories are preserved rather than combined. Each run ID binds the fixture source, run contract, exact built harness JavaScript, dependency lock, algorithm version, Node/V8/platform, runtime/compiler artifact, and external CLI digest. Search-frontier continuation within a killed cell is deliberately not claimed until every compared search policy has a versioned exact checkpoint contract.
 
 ## Observation and coverage
 
@@ -89,7 +89,7 @@ Each generator returns:
 - difficulty coordinates (depth, width, state dimensionality, rarity, delay, revisit, deception, and order); and
 - generation parameters and seed.
 
-Training, validation, and evaluation partitions should use disjoint fixture-seed ranges. The default presets are development-sized; publishable claims require a preregistered matrix with frozen package/runtime versions.
+Training, validation, and evaluation partitions use explicit labels and should use disjoint fixture-seed ranges. Evaluation generators vary both trigger values and topology where applicable; replication must not consist only of repeated search randomness on one fixed graph. Publishable claims require a preregistered matrix with frozen executable fingerprints and counterbalanced cell order.
 
 ## Authored-project corpus contract
 
@@ -118,7 +118,8 @@ Multi-bug scoring counts distinct oracles per run and publishes per-bug discover
 - Generated fixtures use one explicit oracle variable per planted defect. The authored-planted tier now adds missing/impossible content, wrong-divert, loop, revisit, delayed, and state-corruption defects, but fatal runtime failures still need adapter-equivalent scoring before inclusion.
 - In-process strategies use free checkpoint restore in the transition budget. Wall/CPU measurements expose the cost, but a second `root_replay` budget regime is needed for hosts that cannot restore cheaply.
 - State/edge counts are empirical discoveries, not proof-relative percentages unless a fixture is exhaustively enumerated.
-- The InkCheck adapter cannot recover every internal edge metric and currently reports those fields as unavailable.
-- The synchronous InkCheck adapter forwards state, memory, and time limits and reads graceful memory/time stops, but does not yet translate InkCheck's live NDJSON stream or all of its internal memory telemetry.
+- The InkCheck adapter cannot recover every internal edge metric and reports those fields as unavailable. It also has a different full-source information regime from in-process runtime-observation strategies; reports make that asymmetry explicit.
+- The synchronous InkCheck adapter streams bounded NDJSON evidence through a scratch file and retains its native peak-heap/search-watermark telemetry, but child CPU time and phase-complete memory parity remain unavailable.
+- Resource-dependent stopping may be informative. Current survival curves expose resource-stop censoring descriptively rather than claiming an unbiased independent-censoring estimator.
 - No aggregate leaderboard is authoritative in v0.1. Family curves and paired complementarity are the primary outputs.
 - The first authored corpus has only three consent-safe public projects. It tests transfer, not representativeness of all Ink projects.

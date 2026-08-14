@@ -1,16 +1,18 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/chaoz23/inkbench/blob/main/schemas/matrix-state.schema.json",
-  "title": "InkBench resumable matrix state v1",
+  "title": "InkBench resumable matrix state v2",
   "type": "object",
-  "required": ["schemaVersion", "status", "completedCells", "totalCells", "config", "runIds"],
+  "required": ["schemaVersion", "status", "completedCells", "totalCells", "config", "runIds", "experimentFingerprint", "scheduledRunIds"],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "benchmarkTier": { "enum": ["authored-project", "authored-planted"] },
     "status": { "enum": ["running", "complete"] },
     "completedCells": { "type": "integer", "minimum": 0 },
     "totalCells": { "type": "integer", "minimum": 1 },
     "config": { "type": "object" },
-    "runIds": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+    "runIds": { "type": "array", "items": { "type": "string", "pattern": "^[0-9a-f]{32}$" }, "uniqueItems": true },
+    "experimentFingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "scheduledRunIds": { "type": "array", "items": { "type": "string", "pattern": "^[0-9a-f]{32}$" }, "uniqueItems": true }
   }
 }

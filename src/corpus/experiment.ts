@@ -1,8 +1,11 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { writeFileAtomic, writeNdjsonAtomicFromJsonFiles } from "../core/atomic.js";
+import { benchmarkRunId } from "../core/identity.js";
 import { runBenchmark } from "../core/run.js";
 import { SCHEMA_VERSION, type AlgorithmId, type BudgetSpec, type CoverageCounts, type InkCheckOptions, type ResourceLimits, type RunReport, type RunRequest } from "../core/types.js";
+import { assertSummarizableRuns } from "../core/validation.js";
+import { scheduleAlgorithmBlocks } from "../experiments/schedule.js";
 import { getAuthoredCorpusManifest, listAuthoredStories, loadAuthoredFixture } from "./load.js";
 
 export interface AuthoredExperimentConfig {
@@ -17,6 +20,9 @@ export interface AuthoredExperimentConfig {
   inkcheckCommand?: string;
   inkcheckOptions?: InkCheckOptions;
   resources?: ResourceLimits;
+  cellOrder?: "configured" | "counterbalanced";
+  scheduleSeed?: number;
+  fixturePartition?: "development" | "validation" | "evaluation";
 }
 
 interface CoverageAggregate {
@@ -55,6 +61,8 @@ export interface AuthoredComplementarityCell {
   budget: number;
   algorithms: AlgorithmId[];
   pairedRuns: number;
+  fullyCompletedRuns: number;
+  resourceAffectedRuns: number;
   meanUnionLocations: number;
   meanUnionEdges: number;
   meanExclusiveLocations: Record<string, number>;
@@ -80,6 +88,14 @@ export interface AuthoredExperimentResult {
   cellFiles?: string[];
 }
 
+export interface PlannedAuthoredCell {
+  request: RunRequest;
+  runId: string;
+  storyId: string;
+  block: number;
+  position: number;
+}
+
 const COVERAGE_KEYS = [
   "locations",
   "choiceConfigurations",
@@ -95,6 +111,10 @@ function mean(values: number[]): number {
   return values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+function observedRun(run: RunReport): boolean {
+  return run.status === "completed" || run.status === "resource-stopped";
+}
+
 function aggregateCoverage(values: CoverageCounts[], mode: "mean" | "max"): CoverageAggregate {
   return Object.fromEntries(COVERAGE_KEYS.map((key) => [key, mode === "mean" ? mean(values.map((value) => value[key])) : Math.max(...values.map((value) => value[key]))])) as unknown as CoverageAggregate;
 }
@@ -104,10 +124,11 @@ function coverageCells(runs: RunReport[], config: AuthoredExperimentConfig): Aut
   for (const storyId of config.storyIds) for (const budget of config.budgets) for (const algorithm of config.algorithms) {
     const matching = runs.filter((run) => run.fixtureId === `authored-${storyId}` && run.budget.limit === budget && run.algorithm === algorithm);
     const completed = matching.filter((run) => run.status === "completed");
-    const coverage = completed.flatMap((run) => run.coverage ? [run.coverage] : []);
-    const cpu = completed.flatMap((run) => run.timing.cpuMs === null ? [] : [run.timing.cpuMs]);
+    const observed = matching.filter(observedRun);
+    const coverage = observed.flatMap((run) => run.coverage ? [run.coverage] : []);
+    const cpu = observed.flatMap((run) => run.timing.cpuMs === null ? [] : [run.timing.cpuMs]);
     const measured = matching.filter((run) => run.resources !== null);
-    const findingKeys = new Set(completed.flatMap((run) => run.runtimeFindings.map((finding) => `${finding.kind}\u0000${finding.value}`)));
+    const findingKeys = new Set(observed.flatMap((run) => run.runtimeFindings.map((finding) => `${finding.kind}\u0000${finding.value}`)));
     cells.push({
       storyId,
       algorithm,
@@ -118,14 +139,20 @@ function coverageCells(runs: RunReport[], config: AuthoredExperimentConfig): Aut
       resourceStopped: matching.filter((run) => run.status === "resource-stopped").length,
       meanCoverage: coverage.length > 0 ? aggregateCoverage(coverage, "mean") : null,
       maxCoverage: coverage.length > 0 ? aggregateCoverage(coverage, "max") : null,
-      meanTransitions: mean(completed.map((run) => run.counts.transitions)),
-      meanEpisodesCompleted: mean(completed.map((run) => run.counts.episodesCompleted)),
-      runtimeFindingRuns: completed.filter((run) => run.runtimeFindings.length > 0).length,
+      meanTransitions: mean(observed.map((run) => run.counts.transitions)),
+      meanEpisodesCompleted: mean(observed.map((run) => run.counts.episodesCompleted)),
+      runtimeFindingRuns: observed.filter((run) => run.runtimeFindings.length > 0).length,
       distinctRuntimeFindings: findingKeys.size,
-      meanWallMs: mean(completed.map((run) => run.timing.wallMs)),
+      meanWallMs: mean(observed.map((run) => run.timing.wallMs)),
       meanCpuMs: cpu.length > 0 ? mean(cpu) : null,
-      meanPeakHeapBytes: measured.length > 0 ? mean(measured.map((run) => run.resources!.process.peak.heapUsedBytes)) : null,
-      meanPeakCheckpointBytes: measured.length > 0 ? mean(measured.map((run) => run.resources!.snapshots.peakCheckpointBytes)) : null,
+      meanPeakHeapBytes: (() => {
+        const values = measured.flatMap((run) => typeof run.resources!.process.peak?.heapUsedBytes === "number" ? [run.resources!.process.peak.heapUsedBytes] : []);
+        return values.length > 0 ? mean(values) : null;
+      })(),
+      meanPeakCheckpointBytes: (() => {
+        const values = measured.flatMap((run) => typeof run.resources!.snapshots?.peakCheckpointBytes === "number" ? [run.resources!.snapshots.peakCheckpointBytes] : []);
+        return values.length > 0 ? mean(values) : null;
+      })(),
     });
   }
   return cells;
@@ -150,13 +177,17 @@ function complementarityCells(runs: RunReport[], config: AuthoredExperimentConfi
       paired.set(key, group);
     }
     let compared = 0;
+    let fullyCompletedRuns = 0;
+    let resourceAffectedRuns = 0;
     let unionLocations = 0;
     let unionEdges = 0;
     const exclusiveLocations = Object.fromEntries(comparable.map((algorithm) => [algorithm, 0]));
     const exclusiveEdges = Object.fromEntries(comparable.map((algorithm) => [algorithm, 0]));
     if (comparable.length >= 2) for (const group of paired.values()) {
       const selected = comparable.map((algorithm) => group.get(algorithm));
-      if (selected.some((run) => run?.status !== "completed" || run.coverageItems === null)) continue;
+      if (selected.some((run) => run === undefined || !observedRun(run) || run.coverageItems === null)) continue;
+      if (selected.every((run) => run!.status === "completed")) fullyCompletedRuns += 1;
+      else resourceAffectedRuns += 1;
       const locationSets = selected.map((run) => new Set(run!.coverageItems!.locations));
       const edgeSets = selected.map((run) => new Set(run!.coverageItems!.edges));
       unionLocations += new Set(locationSets.flatMap((set) => [...set])).size;
@@ -173,6 +204,8 @@ function complementarityCells(runs: RunReport[], config: AuthoredExperimentConfi
       budget,
       algorithms: comparable,
       pairedRuns: compared,
+      fullyCompletedRuns,
+      resourceAffectedRuns,
       meanUnionLocations: compared > 0 ? unionLocations / compared : 0,
       meanUnionEdges: compared > 0 ? unionEdges / compared : 0,
       meanExclusiveLocations: Object.fromEntries(Object.entries(exclusiveLocations).map(([algorithm, count]) => [algorithm, compared > 0 ? count / compared : 0])),
@@ -192,19 +225,31 @@ export function runAuthoredExperiment(config: AuthoredExperimentConfig, onRun?: 
   if (config.budgetMode === "wall-time" && (!Number.isSafeInteger(config.workBudgetCeiling) || (config.workBudgetCeiling ?? 0) < 1)) throw new RangeError("wall-time mode requires a positive workBudgetCeiling");
   if (config.budgetMode === "wall-time" && config.resources?.maxTimeMs !== undefined) throw new RangeError("wall-time mode cannot also set resources.maxTimeMs");
   if (!Number.isSafeInteger(config.storySeed) || config.storySeed < 1) throw new RangeError("storySeed must be a positive safe integer");
+  if (config.cellOrder !== undefined && config.cellOrder !== "configured" && config.cellOrder !== "counterbalanced") throw new RangeError("cellOrder must be configured or counterbalanced");
+  if (config.scheduleSeed !== undefined && !Number.isSafeInteger(config.scheduleSeed)) throw new RangeError("scheduleSeed must be a safe integer");
   const available = new Set(listAuthoredStories().map((story) => story.id));
   for (const storyId of config.storyIds) if (!available.has(storyId)) throw new RangeError(`unknown authored story: ${storyId}`);
   const runs: RunReport[] = [];
-  const total = config.storyIds.length * config.budgets.length * config.searchSeeds.length * config.algorithms.length;
-  for (const storyId of config.storyIds) {
-    const fixture = loadAuthoredFixture(storyId);
-    for (const budget of config.budgets) for (const searchSeed of config.searchSeeds) for (const algorithm of config.algorithms) {
-      const report = runBenchmark(authoredRunRequest(config, fixture, algorithm, searchSeed, budget));
-      runs.push(report);
-      onRun?.(report, runs.length, total);
-    }
+  const plan = plannedAuthoredCells(config);
+  for (const cell of plan) {
+    const report = runBenchmark(cell.request);
+    runs.push(report);
+    onRun?.(report, runs.length, plan.length);
   }
   return { runs, summary: summarizeAuthoredRuns(runs, config) };
+}
+
+export function plannedAuthoredCells(config: AuthoredExperimentConfig): PlannedAuthoredCell[] {
+  const blocks: Array<{ storyId: string; budget: number; searchSeed: number }> = [];
+  for (const storyId of config.storyIds) for (const budget of config.budgets) for (const searchSeed of config.searchSeeds) {
+    blocks.push({ storyId, budget, searchSeed });
+  }
+  const fixtures = new Map(config.storyIds.map((storyId) => [storyId, loadAuthoredFixture(storyId)]));
+  return scheduleAlgorithmBlocks(blocks, config.algorithms, config.cellOrder, config.scheduleSeed)
+    .map(({ value, algorithm, block, position }) => {
+      const request = authoredRunRequest(config, fixtures.get(value.storyId)!, algorithm, value.searchSeed, value.budget);
+      return { request, runId: benchmarkRunId(request), storyId: value.storyId, block, position };
+    });
 }
 
 export function authoredRunRequest(
@@ -230,6 +275,7 @@ export function authoredRunRequest(
 }
 
 export function summarizeAuthoredRuns(runs: RunReport[], config: AuthoredExperimentConfig): AuthoredExperimentSummary {
+  assertSummarizableRuns(runs);
   return {
       schemaVersion: SCHEMA_VERSION,
       benchmarkTier: "authored-project",
@@ -274,13 +320,13 @@ export function renderAuthoredMarkdown(summary: AuthoredExperimentSummary): stri
     "",
     "## Paired complementarity",
     "",
-    "Exclusive counts are mean empirical items found by only one comparable in-process strategy within the same story/search seed/budget cell. External adapters without item-level evidence are excluded.",
+    "Exclusive counts are mean empirical items found by only one comparable in-process strategy within the same story/search seed/budget cell. Resource-stopped runs contribute only their observed prefix; completed and resource-affected pair counts are shown separately. External adapters without item-level evidence are excluded.",
     "",
-    "| Story | Budget | Paired runs | Mean union locations | Mean union edges | Exclusive locations | Exclusive edges |",
-    "| --- | ---: | ---: | ---: | ---: | --- | --- |",
+    "| Story | Budget | Paired runs | Completed pairs | Resource-affected | Mean union locations | Mean union edges | Exclusive locations | Exclusive edges |",
+    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |",
   );
   for (const cell of summary.complementarity) {
-    lines.push(`| ${cell.storyId} | ${cell.budget} | ${cell.pairedRuns} | ${format(cell.meanUnionLocations)} | ${format(cell.meanUnionEdges)} | ${record(cell.meanExclusiveLocations)} | ${record(cell.meanExclusiveEdges)} |`);
+    lines.push(`| ${cell.storyId} | ${cell.budget} | ${cell.pairedRuns} | ${cell.fullyCompletedRuns} | ${cell.resourceAffectedRuns} | ${format(cell.meanUnionLocations)} | ${format(cell.meanUnionEdges)} | ${record(cell.meanExclusiveLocations)} | ${record(cell.meanExclusiveEdges)} |`);
   }
   lines.push("", "## Sources", "");
   for (const storyId of summary.config.storyIds) {
@@ -306,7 +352,7 @@ export function writeAuthoredExperiment(outputDirectory: string, result: Authore
   const rows = result.runs.map((run) => [
     run.runId, run.fixtureId.replace(/^authored-/, ""), run.algorithm, run.searchSeed, run.storySeed, run.budget.unit, run.budget.limit, run.workBudget?.unit ?? "", run.workBudget?.limit ?? "",
     run.parallelism.requested ?? "", run.parallelism.effective ?? "", run.parallelism.mode, run.status, run.stopReason, run.counts.transitions, run.counts.episodesCompleted, run.runtimeFindings.length, run.timing.wallMs, run.timing.cpuMs ?? "",
-    run.resources?.process.peak.heapUsedBytes ?? "", run.resources?.process.peak.rssBytes ?? "", run.resources?.snapshots.peakBytes ?? "", run.resources?.snapshots.peakCheckpointBytes ?? "",
+    run.resources?.process.peak?.heapUsedBytes ?? "", run.resources?.process.peak?.rssBytes ?? "", run.resources?.snapshots?.peakBytes ?? "", run.resources?.snapshots?.peakCheckpointBytes ?? "",
     run.coverage?.locations ?? "", run.coverage?.choices ?? "", run.coverage?.edges ?? "", run.coverage?.semanticStates ?? "", run.coverage?.rawStates ?? "",
   ]);
   writeFileAtomic(join(outputDirectory, "runs.csv"), `${[headers, ...rows].map((row) => row.map(csv).join(",")).join("\n")}\n`);

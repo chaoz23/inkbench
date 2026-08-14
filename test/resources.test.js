@@ -53,10 +53,9 @@ Done.
     searchSeed: 1,
     storySeed: 1,
     budget: 10,
-  });
+  }, false, false);
   assert.ok(!neutral.includes("ib_bug"));
-  assert.match(neutral, /# INKBENCH_SIGNAL_MODE/);
-  assert.match(neutral, /# INKBENCH_SIGNAL:0/);
+  assert.doesNotMatch(neutral, /INKBENCH/);
 });
 
 test("snapshot ownership charges retained frontiers instead of retaining every transition", () => {
@@ -86,7 +85,7 @@ test("authored-project matrices use the same isolated resource contract", async 
       resources: { maxMemoryMb: 128, progressIntervalTransitions: 5 },
     }, { outputDirectory: directory, resume: true, retainCoverageItems: false });
     assert.equal(result.runs.length, 2);
-    assert.equal(result.runs[0].schemaVersion, 3);
+    assert.equal(result.runs[0].schemaVersion, 4);
     assert.equal(result.runs[0].benchmarkTier, "authored-project");
     assert.equal(result.runs[0].stopReason, "budget");
     assert.equal(result.runs[0].resources.stopReason, "budget");
@@ -161,7 +160,7 @@ if (!process.env.NODE_OPTIONS?.includes("--max-old-space-size=120")) process.exi
 const events = [
   { schemaVersion: 1, type: "run_start", inkcheckVersion: "test", effectiveConfiguration: { concurrency: 1, concurrencyMode: "fixed" } },
   { schemaVersion: 1, type: "benchmark_signal", signal: 0, elapsedMs: 17, firstDiscoveredAtState: 5, choiceIndices: [2] },
-  { schemaVersion: 1, type: "run_end", inkcheckVersion: "test", compile: { success: true }, effectiveConfiguration: { concurrency: 1, concurrencyMode: "fixed" }, explore: { statesExplored: 77, endingsFound: 1, runtimeErrors: 0, exhaustive: false, truncatedBy: { maxStates: false, memory: true, time: false } } }
+  { schemaVersion: 1, type: "run_end", inkcheckVersion: "test", compile: { success: true }, effectiveConfiguration: { concurrency: 1, concurrencyMode: "fixed" }, elapsedMs: 41, resources: { peakMemoryBytes: 50331648, memoryCapBytes: 125829120, memorySearchLimitBytes: 100663296 }, explore: { statesExplored: 77, endingsFound: 1, runtimeErrors: 0, exhaustive: false, truncatedBy: { maxStates: false, memory: true, time: false } } }
 ];
 for (const event of events) process.stdout.write(JSON.stringify(event) + "\\n");
 `, "utf8");
@@ -184,7 +183,12 @@ for (const event of events) process.stdout.write(JSON.stringify(event) + "\\n");
     assert.match(report.notes.join("\n"), /Stream-parsed 1 replay witnesses/);
     assert.match(report.notes.join("\n"), /bounded NDJSON evidence stream/);
     assert.match(report.notes.join("\n"), /120 MiB V8 old-space envelope/);
-    assert.equal(report.resources, null);
+    assert.equal(report.resources.provenance, "external-adapter");
+    assert.equal(report.resources.process.peak.heapUsedBytes, 50331648);
+    assert.equal(report.resources.limits.searchMemoryLimitBytes, 100663296);
+    assert.equal(report.timing.discoveryTimeOrigin, "tool-global");
+    assert.equal(report.observability.informationRegime, "full-source");
+    assert.equal(report.observability.instrumentationRegime, "external-native");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -286,6 +290,13 @@ test("isolated experiment matrices persist cells atomically and resume completed
     assert.equal(JSON.parse(readFileSync(join(directory, "matrix-state.json"), "utf8")).status, "complete");
     assert.ok(existsSync(join(directory, "cells", `${first.runs[0].runId}.json`)));
     assert.equal(readFileSync(join(directory, "runs.partial.ndjson"), "utf8").trim().split("\n").length, 1);
+    const statePath = join(directory, "matrix-state.json");
+    const state = JSON.parse(readFileSync(statePath, "utf8"));
+    writeFileSync(statePath, `${JSON.stringify({ ...state, experimentFingerprint: "0".repeat(64) }, null, 2)}\n`, "utf8");
+    await assert.rejects(
+      runExperimentIsolated(config, { outputDirectory: directory, resume: true }),
+      /experimentFingerprint differs/,
+    );
     writeExperiment(directory, second);
     assert.notEqual(JSON.parse(readFileSync(join(directory, "runs.ndjson"), "utf8")).coverageItems, null);
   } finally {

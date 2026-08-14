@@ -4,7 +4,7 @@ InkBench's question is not “which strategy reports the largest state count?”
 
 ## Required comparisons
 
-Run matched cells over fixture family, fixture seed, search seed/repetition, budget, runtime seed, and tool version. Preserve the raw cell even when compilation or an adapter fails.
+Run matched cells over fixture family, structural fixture seed, search seed/repetition, budget, runtime seed, exact executable fingerprint, and tool version. Preserve the raw cell even when compilation or an adapter fails. Evaluation matrices freeze a counterbalanced serial cell order before execution so algorithm position is not confounded with machine drift.
 
 Primary outcomes:
 
@@ -24,7 +24,9 @@ InkSwarm has a warm-up cost: colonies must be created, selected again, and reinf
 - **cold-start:** 100–1,000 transitions, measuring immediate efficiency;
 - **mature:** logarithmic budgets from 1,000 through 10,000,000 native work units, with memory/time stops retained as partial evidence. Ten million matches InkCheck's current local CLI default; it is a ceiling for a paired cell, not a requirement that an exhaustive story waste the entire grant.
 
-Run mature cells in isolated processes under identical memory and time caps. Record requested versus consumed transitions, stop reason, peak process heap/RSS, peak runtime snapshot bytes, peak explicitly retained checkpoint bytes, and findings before the stop. A memory- or time-stopped cell is valid partial resource evidence but not a completed fixed-transition trial, so exclude it from probability-at-requested-budget denominators.
+Run mature cells in isolated processes under identical memory and time caps. Record requested versus consumed transitions, stop reason, peak process heap/RSS, peak runtime snapshot bytes, peak explicitly retained checkpoint bytes, and findings before the stop. Report two estimands: **observed-anytime yield**, which includes valid completed and resource-stopped prefixes at their actual horizons, and **fixed-grant completer yield**, which uses only runs that received the requested grant. Never silently discard discoveries from a resource-stopped run or present that prefix as if it completed the grant.
+
+Resource stopping can depend on the explored trajectory, so it is potentially informative rather than ordinary independent censoring. Survival output labels resource-stop censoring and is descriptive unless a later estimator explicitly models that stopping process. Probability cells include Wilson 95% intervals and separate completed/resource-stopped counts; small samples should remain visibly uncertain.
 
 Cross-tool work units remain distinct. Compare InkCheck states and InkBench choice transitions through separate native-work curves plus common wall-time, CPU, peak-memory, and finding outcomes; do not manufacture a state-to-transition conversion.
 
@@ -34,9 +36,11 @@ The large ladder is there to expose warm-up, crossover, diminishing-return, and 
 
 Use a planned wall-time budget—not an emergency time guard—for marathon comparisons. Planned expiry is a completed observation. A memory stop or a high native work safety ceiling reached before the timer is incomplete evidence. Preserve both the primary `wall-ms` grant and native work consumed in every report.
 
-The 20-minute tier validates the protocol and estimates early variance. The 60-minute tier keeps fixture seeds, search seeds, policies, depth settings, memory watermark, and scoring frozen; only duration changes. Generated difficulty-10 families supply planted outcomes, Heresy II supplies large-story transfer evidence without planted-bug claims, and Intercept-20 remains a multi-bug sanity case that may saturate early. See [the preregistered promotion gates](marathon-protocol.md).
+The 20-minute tier validates the protocol and estimates early variance. The 60-minute tier keeps fixture seeds, search seeds, policies, depth settings, memory watermark, scoring, and serial schedule frozen; only duration changes. The v4 generated marathon uses three held-out structural seeds and three matched search seeds per family. Generated difficulty-10 families supply planted outcomes, Heresy II supplies large-story transfer evidence without planted-bug claims, and Intercept-20 remains a multi-bug sanity case that may saturate early. See [the preregistered promotion gates](marathon-protocol.md).
 
-InkCheck's scientific arm uses one-core portfolio search, no repro-minimization work, and depth 1,000. A separate product-default arm retains InkCheck's automatic concurrency and other defaults and must not be pooled with the scientific arm. Because per-ending portfolio discovery positions are pass-local, use InkCheck for final yield/complementarity but exclude it from survival curves until per-finding global timing exists.
+InkCheck's scientific arm uses one-core portfolio search, no repro-minimization work, and depth 1,000. A separate product-default arm retains InkCheck's automatic concurrency and other defaults and must not be pooled with the scientific arm. InkCheck's bounded stream supplies process-global elapsed discovery timestamps for wall-time survival; its pass-local state positions remain excluded from native-work survival.
+
+InkCheck necessarily receives full Ink source while in-process strategies receive common runtime observations. Reports label this as a different information regime instead of claiming perfect cross-adapter parity. Generated source passed to InkCheck removes all oracle variables, assignments, marker/signal tags, fixture IDs, semantic endpoint names, and removal-site breadcrumbs; neutral endpoint position is seed-permuted. Every ending path is scored afterward by replay against the private instrumented artifact. Authored-planted signal transport is a separate, explicitly labeled instrumentation regime.
 
 ## Authored-project tier
 
@@ -61,6 +65,8 @@ Every planted mutation must be compilable, have a concrete observable effect bey
 - Repeat randomized strategies; one lucky trajectory is a witness, not comparative evidence.
 - Treat one-seed authored corpus smokes as plumbing checks, not comparative claims.
 - Treat the 20 mutations as within-story bug opportunities, not 20 statistically independent projects.
+- Do not compare runs whose executable fingerprints differ as if they were repetitions of one cell.
+- Do not resume a legacy or mismatched matrix; preserve it and use a fresh output directory.
 
 ## Suggested research matrix
 

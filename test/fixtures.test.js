@@ -35,5 +35,5 @@ test("a reported witness replays the planted oracle exactly", () => {
   }
   assert.ok(controller.bugDiscoveries.some((candidate) => candidate.bugId === discovery.bugId));
   assert.ok(!observation.events.some((event) => event.kind === "bug"));
-  assert.equal(observation.location, "bug");
+  assert.equal(observation.location, fixture.manifest.parameters.targetEndpoint);
 });
