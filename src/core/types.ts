@@ -1,7 +1,7 @@
 export const SCHEMA_VERSION = 1 as const;
 export const RUN_REPORT_SCHEMA_VERSION = 4 as const;
 export const PROGRESS_SCHEMA_VERSION = 2 as const;
-export const INKBENCH_VERSION = "0.1.0" as const;
+export const INKBENCH_VERSION = "0.2.0" as const;
 export const RUN_CONTRACT_VERSION = "marathon-v4" as const;
 
 export type BugFamily =

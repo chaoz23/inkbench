@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/chaoz23/inkbench/blob/v0.1.0/schemas/authored-planted-corpus-manifest.schema.json",
+  "$id": "https://github.com/chaoz23/inkbench/blob/v0.2.0/schemas/authored-planted-corpus-manifest.schema.json",
   "title": "InkBench authored-planted corpus manifest v1",
   "type": "object",
   "additionalProperties": false,

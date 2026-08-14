@@ -20,7 +20,7 @@ const ALGORITHMS: readonly AlgorithmId[] = ["random", "systematic", "coverage", 
 
 function usage(message?: string): never {
   if (message) console.error(`error: ${message}\n`);
-  console.error(`InkBench 0.1.0 — neutral planted-bug benchmarks for Ink search strategies
+  console.error(`InkBench 0.2.0 — neutral planted-bug benchmarks for Ink search strategies
 
 Usage:
   inkbench families

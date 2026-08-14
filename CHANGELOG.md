@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-08-14
 
 - Upgrade run reports to schema v4 and matrix state to v2, binding every run to exact built harness, lockfile, algorithm, runtime/compiler, Node/V8/platform, and external CLI fingerprints; reject legacy or mismatched resume directories.
+- Resolve PATH-based InkCheck commands to one exact executable before hashing and launch so resumable cells cannot silently follow a changed CLI.
 - Remove generated-fixture oracle variables, marker/signal tags, semantic endpoint names, fixture IDs, and removal-site breadcrumbs from InkCheck search input; seed-permute target/control endpoint order and score ordinary neutral endings only through private replay.
 - Add deterministic counterbalanced serial schedules, explicit development/validation/evaluation partition labels, and structural seed variation for previously static generated families.
 - Separate observed-anytime evidence from fixed-grant completers, include resource-stopped prefixes without relabeling them complete, add Wilson intervals, label informative censoring, and compare complementarity at a common observed wall-time horizon.

@@ -1,12 +1,11 @@
-import { createHash } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { StringDecoder } from "node:string_decoder";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { Story } from "inkjs/full";
 import { fixtureSourceHash } from "../core/hash.js";
-import { benchmarkRunId, executionFingerprint } from "../core/identity.js";
+import { benchmarkRunId, executionFingerprint, resolveCommandPath } from "../core/identity.js";
 import { parseInkJson } from "../core/ink-json.js";
 import { compiledFixtureStory } from "../core/runtime.js";
 import { INKBENCH_VERSION, RUN_CONTRACT_VERSION, RUN_REPORT_SCHEMA_VERSION, type BugDiscovery, type ResourceStopReason, type ResourceUsage, type RunReport, type RunRequest } from "../core/types.js";
@@ -293,11 +292,6 @@ function parseInkCheckReport(path: string, request: RunRequest): {
   return { parsed, replay: replayer.result(), transport: "full-json" };
 }
 
-function commandSha256(command: string): string | undefined {
-  if (!existsSync(command)) return undefined;
-  return createHash("sha256").update(readFileSync(command)).digest("hex");
-}
-
 function scratchPath(root: string, requested: string): string {
   const target = resolve(root, requested);
   const fromRoot = relative(root, target);
@@ -432,6 +426,7 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
     const storyPath = scratchPath(scratch, entrypoint);
     if (request.fixture.tier === "generated-planted") writeFileSync(storyPath, oracleNeutralInkSource(request.fixture.source, request, false, false), "utf8");
     const configured = request.inkcheckCommand ?? "inkcheck";
+    const resolvedCommand = resolveCommandPath(configured);
     const adapterDefaults = request.inkcheckOptions === undefined;
     const inkcheckOptions = request.inkcheckOptions ?? { minRepro: false, maxDepth: 1_000, concurrency: 1 };
     if (inkcheckOptions.maxDepth !== undefined && (!Number.isSafeInteger(inkcheckOptions.maxDepth) || inkcheckOptions.maxDepth < 1 || inkcheckOptions.maxDepth > 1_000)) {
@@ -448,10 +443,10 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
     const primaryBudget = request.timeBudgetMs === undefined
       ? { unit: "inkcheck-states" as const, limit: request.budget }
       : { unit: "wall-ms" as const, limit: request.timeBudgetMs };
-    const isJavaScript = configured.endsWith(".js");
-    const executable = isJavaScript ? process.execPath : configured;
+    const isJavaScript = (resolvedCommand ?? configured).endsWith(".js");
+    const executable = isJavaScript ? process.execPath : resolvedCommand ?? configured;
     const args = [
-      ...(isJavaScript ? [configured] : []),
+      ...(isJavaScript ? [resolvedCommand ?? configured] : []),
       storyPath,
       "--json-stream",
       "--max-states",
@@ -527,7 +522,7 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
           elapsedMs: wallMs,
           cpuMs: null,
         });
-    const cliSha256 = commandSha256(configured);
+    const cliSha256 = fingerprint.externalCommandSha256 ?? undefined;
     const engineVersion = `${parsed.inkcheckVersion ?? "unknown"}${cliSha256 ? `+cli.${cliSha256.slice(0, 12)}` : ""}`;
     return {
       schemaVersion: RUN_REPORT_SCHEMA_VERSION,

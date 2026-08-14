@@ -4,11 +4,11 @@ InkBench is a neutral, reproducible benchmarking harness for measuring how effec
 
 It does not exist to make InkSwarm win. It exists to discover whether InkSwarm—or any future searcher—improves bug yield per fixed compute budget or reliably finds classes of failures that simpler strategies miss.
 
-Version 0.1.0 is a working research vertical slice: it generates Ink fixtures, runs a pinned and licensed three-project authored corpus, includes a reproducible 20-bug derivative of The Intercept, enforces transition budgets, runs four internal strategies, invokes the real InkCheck CLI when configured, records exact repro paths, and emits raw datasets plus competence, survival, coverage, and complementarity summaries.
+Version 0.2.0 is a working research harness: it generates Ink fixtures, runs a pinned and licensed three-project authored corpus, includes a reproducible 20-bug derivative of The Intercept, enforces transition and wall-time budgets, runs four internal strategies, invokes the real InkCheck CLI when configured, records exact repro paths, and emits raw datasets plus competence, survival, coverage, and complementarity summaries.
 
-The current unreleased work adds the resource-bounded execution layer needed for mature InkSwarm experiments: explicit checkpoint ownership, heap/time guards, isolated workers, streamed progress, atomic partial evidence, and resumable experiment matrices.
+The 0.2.0 release adds the resource-bounded execution layer needed for mature InkSwarm experiments: explicit checkpoint ownership, heap/time guards, isolated workers, streamed progress, atomic partial evidence, and resumable experiment matrices.
 
-## What ships in 0.1.0
+## What ships in 0.2.0
 
 - Deterministic procedural generators for all eleven initial bug families.
 - Separate fixture, search, and Ink-runtime seeds.

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fixtureSourceHash, hash } from "./hash.js";
 import { RUN_CONTRACT_VERSION, type ExecutionFingerprint, type RunRequest } from "./types.js";
@@ -11,6 +11,26 @@ let lockDigest: string | null | undefined;
 
 function sha256File(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+/** Resolve the exact executable artifact that child_process will launch. */
+export function resolveCommandPath(command: string): string | null {
+  const explicitPath = isAbsolute(command) || command.includes("/") || (process.platform === "win32" && command.includes("\\"));
+  if (explicitPath) {
+    const candidate = resolve(command);
+    return existsSync(candidate) && statSync(candidate).isFile() ? candidate : null;
+  }
+
+  const extensions = process.platform === "win32"
+    ? ["", ...(process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean)]
+    : [""];
+  for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+    for (const extension of extensions) {
+      const candidate = resolve(directory || ".", `${command}${extension}`);
+      if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
+    }
+  }
+  return null;
 }
 
 function filesBelow(root: string): string[] {
@@ -56,8 +76,9 @@ function packageLockSha256(): string | null {
 export function executionFingerprint(request: RunRequest): ExecutionFingerprint {
   const algorithmVersion = request.algorithm === "inkcheck" ? "external-adapter-v4" : getSearcher(request.algorithm).version;
   const inkcheckCommand = request.algorithm === "inkcheck" ? request.inkcheckCommand ?? "inkcheck" : undefined;
-  const inkcheckCommandSha256 = inkcheckCommand && existsSync(inkcheckCommand)
-    ? sha256File(inkcheckCommand)
+  const resolvedInkCheckCommand = inkcheckCommand ? resolveCommandPath(inkcheckCommand) : null;
+  const inkcheckCommandSha256 = resolvedInkCheckCommand
+    ? sha256File(resolvedInkCheckCommand)
     : null;
   const algorithmArtifact = join(
     packageRoot(),

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
 import test from "node:test";
 import { Compiler, CompilerOptions, Story } from "inkjs/full";
 import {
@@ -136,6 +139,24 @@ test("run identity changes with the exact executable fingerprint", () => {
   const report = runBenchmark(request);
   assert.equal(report.runId, benchmarkRunId(request));
   assert.equal(report.executionFingerprint.digest, fingerprint.digest);
+});
+
+test("PATH-resolved InkCheck commands are bound to the executable artifact", () => {
+  const directory = mkdtempSync(join(tmpdir(), "inkbench-path-command-"));
+  const command = join(directory, "inkcheck");
+  const previousPath = process.env.PATH;
+  try {
+    writeFileSync(command, "#!/bin/sh\nexit 0\n", "utf8");
+    chmodSync(command, 0o755);
+    process.env.PATH = `${directory}${delimiter}${previousPath ?? ""}`;
+    const fixture = generateFixture("shallow-obvious", 1, 1);
+    const fingerprint = executionFingerprint({ ...requestFor(fixture, "inkcheck"), inkcheckCommand: "inkcheck" });
+    assert.match(fingerprint.externalCommandSha256 ?? "", /^[0-9a-f]{64}$/);
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("summary generation refuses duplicate logical cells from mixed executions", () => {
