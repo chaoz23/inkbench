@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chaoz23/inkbench/blob/main/schemas/route-corpus.schema.json",
+  "title": "InkBench longitudinal route corpus v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sequenceId", "arm", "revisionId", "routes", "prunedRoutes", "rebuilds"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "sequenceId": { "type": "string" },
+    "arm": { "type": "string" },
+    "revisionId": { "type": ["string", "null"] },
+    "routes": { "type": "array", "items": { "type": "object" } },
+    "prunedRoutes": { "type": "integer", "minimum": 0 },
+    "rebuilds": { "type": "integer", "minimum": 0 }
+  }
+}

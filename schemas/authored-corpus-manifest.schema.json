@@ -19,11 +19,22 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "family", "projectSize", "directory", "source", "compiled", "files"],
+        "required": ["id", "family", "projectSize", "complexity", "directory", "source", "compiled", "files"],
         "properties": {
           "id": { "type": "string", "minLength": 1 },
           "family": { "enum": ["function-and-loop-heavy", "choice-dense-authored-story", "stitch-heavy-random-authored-story"] },
           "projectSize": { "enum": ["small", "medium", "large"] },
+          "complexity": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["schemaVersion", "analyzer", "static", "scaleRoles"],
+            "properties": {
+              "schemaVersion": { "const": 1 },
+              "analyzer": { "const": "inkbench-corpus-complexity-v1" },
+              "static": { "type": "object" },
+              "scaleRoles": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+            }
+          },
           "directory": { "type": "string", "minLength": 1 },
           "source": {
             "type": "object",

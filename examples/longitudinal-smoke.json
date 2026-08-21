@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "sequenceSeeds": [1, 2, 3],
+  "partition": "development",
+  "revisions": 12,
+  "arms": [
+    "cold-random",
+    "cold-systematic",
+    "cold-coverage",
+    "cold-swarm",
+    "warm-coverage",
+    "periodic-coverage",
+    "persistent-swarm",
+    "persistent-swarm-no-rogue"
+  ],
+  "perRevisionBudget": 200,
+  "storySeed": 1,
+  "maxRoutes": 128,
+  "maxCorpusBytes": 512000,
+  "rogueFraction": 0.15,
+  "periodicRebuildEvery": 4
+}

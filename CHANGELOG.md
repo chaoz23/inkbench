@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0 - 2026-08-20
+
+- Add a persistent longitudinal benchmark with deterministic 1–30 revision streams, cold/warm/periodic/ablation arms, charged route replay and rebasing, bounded recipe-only corpora, atomic resume, revision-bound witnesses, and cumulative creator-cost analysis.
+- Add deterministic public and aggregate-only local/private corpus complexity analysis with checked manifest coordinates and explicit generalization gaps.
+- Add resource-stop probability sensitivity bounds, a common terminal taxonomy, explicit observability/source-privilege contracts, phase-aware timing, and paired instrumentation calibration.
+- Add topology-equivalence, seed-partition, source-placebo, durable matrix, and preregistered staged-pilot audits.
+- Require explicit `single` or `environment` classification when deterministic systematic cells are repeated across search seeds in generated, authored, and mutant matrices.
+
 ## 0.2.0 - 2026-08-14
 
 - Upgrade run reports to schema v4 and matrix state to v2, binding every run to exact built harness, lockfile, algorithm, runtime/compiler, Node/V8/platform, and external CLI fingerprints; reject legacy or mismatched resume directories.

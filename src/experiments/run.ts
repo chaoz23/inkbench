@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { writeFileAtomic, writeNdjsonAtomicFromJsonFiles } from "../core/atomic.js";
 import type { AlgorithmId, BenchmarkFixture, BugFamily, ExperimentConfig, ExperimentSummary, RunReport, RunRequest } from "../core/types.js";
 import { generateFixture } from "../fixtures/generate.js";
+import { assertFixtureSeedPartition } from "../fixtures/equivalence.js";
 import { runBenchmark } from "../core/run.js";
 import { renderMarkdown, summarizeRuns } from "./summarize.js";
 import { experimentSchedule } from "./schedule.js";
@@ -58,6 +59,7 @@ export function runExperiment(config: ExperimentConfig, onRun?: (report: RunRepo
 
 export function plannedExperimentCells(config: ExperimentConfig): PlannedExperimentCell[] {
   if (config.scheduleSeed !== undefined && !Number.isSafeInteger(config.scheduleSeed)) throw new RangeError("scheduleSeed must be a safe integer");
+  assertFixtureSeedPartition(config.fixtureSeeds, config.fixturePartition);
   const fixtures = new Map<string, BenchmarkFixture>();
   return experimentSchedule(config).map((cell) => {
     const key = `${cell.family}\u0000${cell.fixtureSeed}`;

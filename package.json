@@ -1,6 +1,6 @@
 {
   "name": "@chaoz23/inkbench",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Neutral, reproducible planted-bug and real-story benchmarks for Ink search strategies.",
   "type": "module",
   "bin": {
@@ -41,7 +41,9 @@
     "mutants:development": "node dist/cli.js mutants experiment --preset development --out artifacts/intercept-20-development --isolated --resume",
     "mutants:mature": "node dist/cli.js mutants experiment --preset mature --out artifacts/intercept-20-mature --resume",
     "mutants:marathon:20m": "node dist/cli.js mutants experiment --preset marathon-20m --out artifacts/intercept-20-marathon-20m --resume",
-    "mutants:marathon:60m": "node dist/cli.js mutants experiment --preset marathon-60m --out artifacts/intercept-20-marathon-60m --resume"
+    "mutants:marathon:60m": "node dist/cli.js mutants experiment --preset marathon-60m --out artifacts/intercept-20-marathon-60m --resume",
+    "longitudinal:smoke": "node dist/cli.js longitudinal experiment --config examples/longitudinal-smoke.json --out artifacts/longitudinal-smoke --resume",
+    "corpus:analyze": "node dist/cli.js corpus analyze --runtime-budget 1000 --out artifacts/corpus-complexity.json"
   },
   "keywords": [
     "ink",

@@ -49,6 +49,9 @@ export function scheduleAlgorithmBlocks<T>(
 
 /** Build the complete serial order before execution so resume cannot rebalance after observing outcomes. */
 export function experimentSchedule(config: ExperimentConfig): ExperimentCellSpec[] {
+  if (config.algorithms.includes("systematic") && config.searchSeeds.length > 1 && config.deterministicReplication === undefined) {
+    throw new RangeError("multiple systematic search seeds require deterministicReplication=single or environment");
+  }
   const blocks: BlockSpec[] = [];
   for (const family of config.families) for (const fixtureSeed of config.fixtureSeeds) {
     for (const budget of config.budgets) for (const searchSeed of config.searchSeeds) {
@@ -56,5 +59,6 @@ export function experimentSchedule(config: ExperimentConfig): ExperimentCellSpec
     }
   }
   return scheduleAlgorithmBlocks(blocks, config.algorithms, config.cellOrder, config.scheduleSeed)
-    .map(({ value, ...scheduled }) => ({ ...value, ...scheduled }));
+    .map(({ value, ...scheduled }) => ({ ...value, ...scheduled }))
+    .filter((cell) => config.deterministicReplication !== "single" || cell.algorithm !== "systematic" || cell.searchSeed === config.searchSeeds[0]);
 }

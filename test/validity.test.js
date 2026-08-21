@@ -15,6 +15,11 @@ import {
   oracleNeutralInkSource,
   runBenchmark,
   summarizeRuns,
+  auditFixtureEquivalence,
+  auditSourceAwarePlacebos,
+  plannedExperimentCells,
+  evaluateSequentialPilot,
+  calibrateInstrumentation,
 } from "../dist/index.js";
 
 function requestFor(fixture, algorithm = "random") {
@@ -92,6 +97,45 @@ test("structural seeds change formerly static generated topologies", () => {
   assert.deepEqual(endpointPositions, [0, 1], "target/control source order must be seed-permuted");
 });
 
+test("fixture equivalence audits separate seed count from structural skeleton count", () => {
+  const shallow = auditFixtureEquivalence("shallow-obvious", [1, 2, 3, 4], 1);
+  const corridor = auditFixtureEquivalence("deep-corridor", [201, 202, 203, 204], 10);
+  assert.equal(shallow.fixtureSeeds.length, 4);
+  assert.ok(shallow.uniqueTopologies >= 1 && shallow.uniqueTopologies <= 4);
+  assert.ok(corridor.uniqueTopologies >= 2);
+});
+
+test("fixture seed partitions fail closed", () => {
+  const base = { schemaVersion: 1, families: ["shallow-obvious"], algorithms: ["random"], searchSeeds: [1], budgets: [5], difficulty: 1, storySeed: 1 };
+  assert.throws(() => plannedExperimentCells({ ...base, fixtureSeeds: [1], fixturePartition: "evaluation" }), /evaluation fixture seeds/);
+  assert.equal(plannedExperimentCells({ ...base, fixtureSeeds: [201], fixturePartition: "evaluation" }).length, 1);
+});
+
+test("source-aware endpoint placebos remain near chance after neutralization", () => {
+  const seeds = Array.from({ length: 100 }, (_, index) => index + 1);
+  for (const family of BUG_FAMILIES) {
+    const audit = auditSourceAwarePlacebos(family, seeds, 3);
+    assert.equal(audit.forbiddenCueLeaks, 0, family);
+    assert.equal(audit.passesChanceTolerance, true, family);
+  }
+});
+
+test("sequential pilots stop only at preregistered stage boundaries", () => {
+  const plan = { schemaVersion: 1, fixtureSeeds: [201, 202, 203, 204, 205, 206], minimumRuns: 3, maximumRuns: 6, stageSize: 3, targetWilsonHalfWidth: 0.4 };
+  assert.equal(evaluateSequentialPilot(plan, [true, false]).decision, "continue");
+  assert.deepEqual(evaluateSequentialPilot(plan, [true, false]).observedFixtureSeeds, [201, 202]);
+  assert.deepEqual(evaluateSequentialPilot(plan, [true, false]).nextStageFixtureSeeds, [203]);
+  assert.equal(evaluateSequentialPilot(plan, [true, true, false]).atStageBoundary, true);
+  assert.equal(evaluateSequentialPilot(plan, [true, true, false, true, false, false]).decision, "stop-maximum");
+});
+
+test("instrumentation calibration counterbalances execution order on identical decisions", () => {
+  const report = calibrateInstrumentation(["shallow-obvious"], [1, 2], 10, 1, "fixed");
+  assert.deepEqual(report.cells.map((cell) => cell.executionOrder), ["without-then-with", "with-then-without"]);
+  assert.ok(report.cells.every((cell) => cell.withCommonInstrumentation.coverageIndexBytes > 0));
+  assert.ok(report.cells.every((cell) => cell.withoutCommonInstrumentation.coverageIndexBytes === 0));
+});
+
 test("counterbalanced schedules are deterministic and balance serial algorithm position", () => {
   const config = {
     schemaVersion: 1,
@@ -105,6 +149,7 @@ test("counterbalanced schedules are deterministic and balance serial algorithm p
     cellOrder: "counterbalanced",
     scheduleSeed: 1234,
     fixturePartition: "validation",
+    deterministicReplication: "environment",
   };
   const first = experimentSchedule(config);
   const second = experimentSchedule(config);
@@ -139,6 +184,9 @@ test("run identity changes with the exact executable fingerprint", () => {
   const report = runBenchmark(request);
   assert.equal(report.runId, benchmarkRunId(request));
   assert.equal(report.executionFingerprint.digest, fingerprint.digest);
+  assert.deepEqual(report.observability.sourcePrivileges, []);
+  assert.ok(report.observability.observableFields.includes("opaqueCheckpointHandles"));
+  assert.equal(typeof report.timing.phases.compileLoadMs, "number");
 });
 
 test("PATH-resolved InkCheck commands are bound to the executable artifact", () => {
@@ -175,6 +223,7 @@ test("summary generation refuses duplicate logical cells from mixed executions",
     budgets: [25],
     difficulty: 1,
     storySeed: 1,
+    deterministicReplication: "environment",
   };
   assert.throws(() => summarizeRuns([report, mixed], config), /executionFingerprint differs/);
 });
@@ -216,6 +265,7 @@ test("observed-anytime summaries retain discoveries and censor resource stops at
   const summary = summarizeRuns([random, systematic], config);
   assert.equal(summary.probability.find((cell) => cell.algorithm === "systematic").discoveries, 1);
   assert.equal(summary.probability.find((cell) => cell.algorithm === "systematic").completedRuns, 0);
+  assert.deepEqual(summary.probability.find((cell) => cell.algorithm === "random").resourceStopSensitivity, { lower: 0, upper: 1 });
   assert.ok(summary.survivalTime.some((point) => point.algorithm === "random" && point.elapsedMs === 20 && point.censored === 1 && point.resourceStops === 1));
   assert.equal(summary.complementarity[0].resourceAffectedRuns, 1);
   assert.equal(summary.complementarity[0].exclusiveDiscoveries.systematic, 1);

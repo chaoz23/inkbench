@@ -1,5 +1,7 @@
 import { SCHEMA_VERSION, type AlgorithmId, type ComplementarityCell, type ExperimentConfig, type ExperimentSummary, type ProbabilityCell, type ResourceCell, type RunReport, type SurvivalPoint, type SurvivalTimePoint } from "../core/types.js";
 import { assertSummarizableRuns } from "../core/validation.js";
+import { auditFixtureEquivalence } from "../fixtures/equivalence.js";
+import { summarizeTerminalOutcomes } from "../analysis/outcomes.js";
 
 function median(values: number[]): number | null {
   if (values.length === 0) return null;
@@ -42,6 +44,7 @@ function probabilityCells(runs: RunReport[]): ProbabilityCell[] {
     const discovered = values.filter((run) => run.discoveredBugs.length > 0);
     const completed = values.filter((run) => run.status === "completed");
     const completedDiscovered = completed.filter((run) => run.discoveredBugs.length > 0);
+    const unresolvedStops = values.filter((run) => run.status === "resource-stopped" && run.discoveredBugs.length === 0).length;
     const cpuValues = values.flatMap((run) => run.timing.cpuMs === null ? [] : [run.timing.cpuMs]);
     return {
       family: first.family,
@@ -53,6 +56,10 @@ function probabilityCells(runs: RunReport[]): ProbabilityCell[] {
       discoveries: discovered.length,
       probability: discovered.length / values.length,
       interval95: wilson95(discovered.length, values.length),
+      resourceStopSensitivity: {
+        lower: discovered.length / values.length,
+        upper: (discovered.length + unresolvedStops) / values.length,
+      },
       completedDiscoveries: completedDiscovered.length,
       completedProbability: completed.length === 0 ? null : completedDiscovered.length / completed.length,
       medianTransitionsToDiscovery: median(discovered
@@ -220,12 +227,25 @@ function resourceCells(runs: RunReport[]): ResourceCell[] {
 
 export function summarizeRuns(runs: RunReport[], config: ExperimentConfig, generatedAt = new Date().toISOString()): ExperimentSummary {
   assertSummarizableRuns(runs);
+  const replication = config.families.map((family) => {
+    const audit = auditFixtureEquivalence(family, config.fixtureSeeds, config.difficulty);
+    return {
+      family,
+      fixtureSeeds: config.fixtureSeeds.length,
+      uniqueTopologies: audit.uniqueTopologies,
+      searchSeeds: config.searchSeeds.length,
+      effectiveIndependentFixtureSamples: audit.uniqueTopologies,
+      interpretation: `${audit.uniqueTopologies} structural skeleton(s) across ${config.fixtureSeeds.length} fixture seed(s); ${config.searchSeeds.length} search trajectories per fixture are repeated trajectories, not independent projects.`,
+    };
+  });
   return {
     schemaVersion: SCHEMA_VERSION,
     generatedAt,
     config,
     totalRuns: runs.length,
     successfulRuns: runs.filter((run) => run.status === "completed").length,
+    terminalOutcomes: summarizeTerminalOutcomes(runs),
+    replication,
     probability: probabilityCells(runs),
     survival: survivalCells(runs),
     survivalTime: survivalTimeCells(runs),
@@ -255,7 +275,7 @@ export function renderMarkdown(summary: ExperimentSummary): string {
     for (const family of summary.config.families) {
       const cells = summary.config.algorithms.map((algorithm) => summary.probability.find((cell) => cell.family === family && cell.algorithm === algorithm && cell.budget === budget));
       lines.push(`| ${family} | ${cells.map((cell) => cell
-        ? `${percent(cell.probability)} (${cell.discoveries}/${cell.runs}; 95% ${percent(cell.interval95.lower)}–${percent(cell.interval95.upper)}); completed-only ${cell.completedProbability === null ? "n/a" : `${percent(cell.completedProbability)} (${cell.completedDiscoveries}/${cell.completedRuns})`}`
+        ? `${percent(cell.probability)} (${cell.discoveries}/${cell.runs}; 95% ${percent(cell.interval95.lower)}–${percent(cell.interval95.upper)}; stop sensitivity ${percent(cell.resourceStopSensitivity.lower)}–${percent(cell.resourceStopSensitivity.upper)}); completed-only ${cell.completedProbability === null ? "n/a" : `${percent(cell.completedProbability)} (${cell.completedDiscoveries}/${cell.completedRuns})`}`
         : "n/a").join(" | ")} |`);
     }
     lines.push("", "### Median transitions to discovery", "");
@@ -273,6 +293,18 @@ export function renderMarkdown(summary: ExperimentSummary): string {
     lines.push("");
   }
   lines.push(
+    "## Replication audit",
+    "",
+    "Fixture seeds and search trajectories are reported separately. Structural skeleton counts are conservative audit signatures, not proof that two Ink programs are graph-isomorphic.",
+    "",
+    "| Family | Fixture seeds | Unique structural skeletons | Search seeds | Interpretation |",
+    "| --- | ---: | ---: | ---: | --- |",
+  );
+  for (const cell of summary.replication) {
+    lines.push(`| ${cell.family} | ${cell.fixtureSeeds} | ${cell.uniqueTopologies} | ${cell.searchSeeds} | ${cell.interpretation} |`);
+  }
+  lines.push(
+    "",
     "## Resource envelope",
     "",
     "Resource-stopped cells remain observed partial evidence. They are included in observed-anytime yield, but they do not count as completed fixed-grant trials. Peak snapshot bytes include Ink save JSON plus observations; checkpoint bytes are the subset explicitly retained by a search policy.",

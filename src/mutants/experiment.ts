@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { writeFileAtomic, writeNdjsonAtomicFromJsonFiles } from "../core/atomic.js";
 import { benchmarkRunId } from "../core/identity.js";
 import { runBenchmark } from "../core/run.js";
-import { SCHEMA_VERSION, type AlgorithmId, type AuthoredFaultType, type BugFamily, type InkCheckOptions, type ResourceLimits, type RunReport, type RunRequest } from "../core/types.js";
+import { SCHEMA_VERSION, type AlgorithmId, type AuthoredFaultType, type BugFamily, type InkCheckOptions, type ResourceLimits, type RunReport, type RunRequest, type TerminalOutcomeCounts } from "../core/types.js";
+import { summarizeTerminalOutcomes } from "../analysis/outcomes.js";
 import { assertSummarizableRuns } from "../core/validation.js";
 import { scheduleAlgorithmBlocks } from "../experiments/schedule.js";
 import { getAuthoredPlantedCorpusManifest, listAuthoredPlantedStories, loadAuthoredPlantedFixture } from "./load.js";
@@ -25,6 +26,8 @@ export interface MutantExperimentConfig {
   cellOrder?: "configured" | "counterbalanced";
   scheduleSeed?: number;
   fixturePartition?: "development" | "validation" | "evaluation";
+  /** How repeated cells for deterministic algorithms should be interpreted. */
+  deterministicReplication?: "single" | "environment";
 }
 
 export interface BugYieldCell {
@@ -33,6 +36,7 @@ export interface BugYieldCell {
   budget: number;
   runs: number;
   completed: number;
+  resourceStopped: number;
   plantedBugs: number;
   meanBugsDiscovered: number;
   medianBugsDiscovered: number | null;
@@ -40,9 +44,11 @@ export interface BugYieldCell {
   meanBugFraction: number;
   probabilityAny: number;
   probabilityAnyInterval95: [number, number];
+  probabilityAnyResourceStopSensitivity: { lower: number; upper: number };
   completedProbabilityAny: number | null;
   probabilityAll: number;
   probabilityAllInterval95: [number, number];
+  probabilityAllResourceStopSensitivity: { lower: number; upper: number };
   completedProbabilityAll: number | null;
   medianTransitionsToFirst: number | null;
   meanWallMs: number;
@@ -56,9 +62,12 @@ export interface PerBugCell {
   algorithm: AlgorithmId;
   budget: number;
   runs: number;
+  completed: number;
+  resourceStopped: number;
   discoveries: number;
   probability: number;
   interval95: [number, number];
+  resourceStopSensitivity: { lower: number; upper: number };
   medianTransitionsToDiscovery: number | null;
   medianElapsedMsToDiscovery: number | null;
 }
@@ -95,6 +104,7 @@ export interface MutantExperimentSummary {
   config: MutantExperimentConfig;
   totalRuns: number;
   successfulRuns: number;
+  terminalOutcomes: TerminalOutcomeCounts;
   bugYield: BugYieldCell[];
   perBug: PerBugCell[];
   complementarity: MutantComplementarityCell[];
@@ -151,6 +161,7 @@ function bugYieldCells(runs: RunReport[], config: MutantExperimentConfig): BugYi
     const matching = runs.filter((run) => run.fixtureId === fixtureId(storyId) && run.budget.limit === budget && run.algorithm === algorithm);
     const completed = matching.filter((run) => run.status === "completed");
     const observed = matching.filter(observedRun);
+    const resourceStopped = observed.filter((run) => run.status === "resource-stopped");
     const plantedBugs = matching[0]?.plantedBugIds.length ?? loadAuthoredPlantedFixture(storyId).manifest.bugs.length;
     const counts = observed.map((run) => run.discoveredBugs.length);
     const any = observed.filter((run) => run.discoveredBugs.length > 0).length;
@@ -162,6 +173,7 @@ function bugYieldCells(runs: RunReport[], config: MutantExperimentConfig): BugYi
       budget,
       runs: observed.length,
       completed: completed.length,
+      resourceStopped: resourceStopped.length,
       plantedBugs,
       meanBugsDiscovered: mean(counts),
       medianBugsDiscovered: median(counts),
@@ -169,9 +181,17 @@ function bugYieldCells(runs: RunReport[], config: MutantExperimentConfig): BugYi
       meanBugFraction: plantedBugs === 0 ? 0 : mean(counts) / plantedBugs,
       probabilityAny: observed.length === 0 ? 0 : any / observed.length,
       probabilityAnyInterval95: wilson95(any, observed.length),
+      probabilityAnyResourceStopSensitivity: {
+        lower: observed.length === 0 ? 0 : any / observed.length,
+        upper: observed.length === 0 ? 1 : (any + resourceStopped.filter((run) => run.discoveredBugs.length === 0).length) / observed.length,
+      },
       completedProbabilityAny: completed.length === 0 ? null : completed.filter((run) => run.discoveredBugs.length > 0).length / completed.length,
       probabilityAll: observed.length === 0 ? 0 : all / observed.length,
       probabilityAllInterval95: wilson95(all, observed.length),
+      probabilityAllResourceStopSensitivity: {
+        lower: observed.length === 0 ? 0 : all / observed.length,
+        upper: observed.length === 0 ? 1 : (all + resourceStopped.filter((run) => run.discoveredBugs.length < plantedBugs).length) / observed.length,
+      },
       completedProbabilityAll: completed.length === 0 ? null : completed.filter((run) => run.discoveredBugs.length === plantedBugs).length / completed.length,
       medianTransitionsToFirst: median(firstTimes),
       meanWallMs: mean(observed.map((run) => run.timing.wallMs)),
@@ -186,6 +206,8 @@ function perBugCells(runs: RunReport[], config: MutantExperimentConfig): PerBugC
     const bugs = loadAuthoredPlantedFixture(storyId).manifest.bugs;
     for (const budget of config.budgets) for (const algorithm of config.algorithms) {
       const observed = runs.filter((run) => run.fixtureId === fixtureId(storyId) && run.budget.limit === budget && run.algorithm === algorithm && observedRun(run));
+      const completed = observed.filter((run) => run.status === "completed");
+      const resourceStopped = observed.filter((run) => run.status === "resource-stopped");
       for (const bug of bugs) {
         const discoveries = observed.flatMap((run) => {
           const found = run.discoveredBugs.find((candidate) => candidate.bugId === bug.id);
@@ -199,9 +221,15 @@ function perBugCells(runs: RunReport[], config: MutantExperimentConfig): PerBugC
           algorithm,
           budget,
           runs: observed.length,
+          completed: completed.length,
+          resourceStopped: resourceStopped.length,
           discoveries: discoveries.length,
           probability: observed.length === 0 ? 0 : discoveries.length / observed.length,
           interval95: wilson95(discoveries.length, observed.length),
+          resourceStopSensitivity: {
+            lower: observed.length === 0 ? 0 : discoveries.length / observed.length,
+            upper: observed.length === 0 ? 1 : (discoveries.length + resourceStopped.filter((run) => !run.discoveredBugs.some((candidate) => candidate.bugId === bug.id)).length) / observed.length,
+          },
           medianTransitionsToDiscovery: median(discoveries.flatMap(({ run, found }) => run.discoveryTimingBasis === "global-work" ? [found.transition] : [])),
           medianElapsedMsToDiscovery: median(discoveries.flatMap(({ run, found }) => run.discoveryTimingBasis === "final-only" ? [] : [found.elapsedMs])),
         });
@@ -297,6 +325,10 @@ function validateConfig(config: MutantExperimentConfig): void {
   const algorithms = new Set<AlgorithmId>(["random", "systematic", "coverage", "swarm", "inkcheck"]);
   for (const algorithm of config.algorithms) if (!algorithms.has(algorithm)) throw new RangeError(`unknown algorithm: ${algorithm}`);
   if (config.searchSeeds.length === 0 || config.searchSeeds.some((seed) => !Number.isSafeInteger(seed) || seed < 0)) throw new RangeError("searchSeeds must contain non-negative safe integers");
+  if (config.deterministicReplication !== undefined && config.deterministicReplication !== "single" && config.deterministicReplication !== "environment") throw new RangeError("deterministicReplication must be single or environment");
+  if (config.algorithms.includes("systematic") && config.searchSeeds.length > 1 && config.deterministicReplication === undefined) {
+    throw new RangeError("multiple systematic search seeds require deterministicReplication=single or environment");
+  }
   if (config.budgets.length === 0 || config.budgets.some((budget) => !Number.isSafeInteger(budget) || budget < 1)) throw new RangeError("budgets must contain positive safe integers");
   if (config.budgetMode !== undefined && config.budgetMode !== "work" && config.budgetMode !== "wall-time") throw new RangeError("budgetMode must be work or wall-time");
   if (config.budgetMode === "wall-time" && (!Number.isSafeInteger(config.workBudgetCeiling) || (config.workBudgetCeiling ?? 0) < 1)) {
@@ -354,6 +386,7 @@ export function plannedMutantCells(config: MutantExperimentConfig): PlannedMutan
   }
   const fixtures = new Map(config.storyIds.map((storyId) => [storyId, loadAuthoredPlantedFixture(storyId)]));
   return scheduleAlgorithmBlocks(blocks, config.algorithms, config.cellOrder, config.scheduleSeed)
+    .filter(({ value, algorithm }) => config.deterministicReplication !== "single" || algorithm !== "systematic" || value.searchSeed === config.searchSeeds[0])
     .map(({ value, algorithm, block, position }) => {
       const request = mutantRunRequest(config, fixtures.get(value.storyId)!, algorithm, value.searchSeed, value.budget);
       return { request, runId: benchmarkRunId(request), storyId: value.storyId, block, position };
@@ -370,6 +403,7 @@ export function summarizeMutantRuns(runs: RunReport[], config: MutantExperimentC
     config,
     totalRuns: runs.length,
     successfulRuns: runs.filter((run) => run.status === "completed").length,
+    terminalOutcomes: summarizeTerminalOutcomes(runs),
     bugYield: bugYieldCells(runs, config),
     perBug: perBugCells(runs, config),
     complementarity: complementarityCells(runs, config),
@@ -404,7 +438,7 @@ export function renderMutantMarkdown(summary: MutantExperimentSummary): string {
     "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
   ];
   for (const cell of summary.bugYield) {
-    lines.push(`| ${cell.storyId} | ${cell.algorithm} | ${cell.budget} | ${cell.completed}/${cell.runs} | ${format(cell.meanBugsDiscovered)} | ${cell.medianBugsDiscovered ?? "n/a"} | ${cell.maxBugsDiscovered} | ${percent(cell.meanBugFraction)} | ${percent(cell.probabilityAny)} [${percent(cell.probabilityAnyInterval95[0])}, ${percent(cell.probabilityAnyInterval95[1])}] | ${cell.completedProbabilityAny === null ? "n/a" : percent(cell.completedProbabilityAny)} | ${percent(cell.probabilityAll)} [${percent(cell.probabilityAllInterval95[0])}, ${percent(cell.probabilityAllInterval95[1])}] | ${cell.completedProbabilityAll === null ? "n/a" : percent(cell.completedProbabilityAll)} | ${cell.medianTransitionsToFirst ?? "n/a"} |`);
+    lines.push(`| ${cell.storyId} | ${cell.algorithm} | ${cell.budget} | ${cell.completed}/${cell.runs} | ${format(cell.meanBugsDiscovered)} | ${cell.medianBugsDiscovered ?? "n/a"} | ${cell.maxBugsDiscovered} | ${percent(cell.meanBugFraction)} | ${percent(cell.probabilityAny)} [${percent(cell.probabilityAnyInterval95[0])}, ${percent(cell.probabilityAnyInterval95[1])}]; stop sensitivity ${percent(cell.probabilityAnyResourceStopSensitivity.lower)}–${percent(cell.probabilityAnyResourceStopSensitivity.upper)} | ${cell.completedProbabilityAny === null ? "n/a" : percent(cell.completedProbabilityAny)} | ${percent(cell.probabilityAll)} [${percent(cell.probabilityAllInterval95[0])}, ${percent(cell.probabilityAllInterval95[1])}]; stop sensitivity ${percent(cell.probabilityAllResourceStopSensitivity.lower)}–${percent(cell.probabilityAllResourceStopSensitivity.upper)} | ${cell.completedProbabilityAll === null ? "n/a" : percent(cell.completedProbabilityAll)} | ${cell.medianTransitionsToFirst ?? "n/a"} |`);
   }
   lines.push("", "## Per-bug competence map", "");
   for (const storyId of summary.config.storyIds) {
@@ -413,7 +447,7 @@ export function renderMutantMarkdown(summary: MutantExperimentSummary): string {
       const bugs = summary.perBug.filter((cell) => cell.storyId === storyId && cell.budget === budget && cell.algorithm === summary.config.algorithms[0]);
       for (const bug of bugs) {
         const values = summary.config.algorithms.map((algorithm) => summary.perBug.find((cell) => cell.storyId === bug.storyId && cell.bugId === bug.bugId && cell.budget === budget && cell.algorithm === algorithm));
-        lines.push(`| ${bug.bugId} | ${bug.family} | ${bug.faultType} | ${values.map((cell) => cell ? `${percent(cell.probability)} [${percent(cell.interval95[0])}, ${percent(cell.interval95[1])}] (${cell.discoveries}/${cell.runs})` : "n/a").join(" | ")} |`);
+        lines.push(`| ${bug.bugId} | ${bug.family} | ${bug.faultType} | ${values.map((cell) => cell ? `${percent(cell.probability)} [${percent(cell.interval95[0])}, ${percent(cell.interval95[1])}] (${cell.discoveries}/${cell.runs}); stop sensitivity ${percent(cell.resourceStopSensitivity.lower)}–${percent(cell.resourceStopSensitivity.upper)}` : "n/a").join(" | ")} |`);
       }
       lines.push("");
     }

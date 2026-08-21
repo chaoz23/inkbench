@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chaoz23/inkbench/blob/main/schemas/sequential-pilot-plan.schema.json",
+  "title": "InkBench preregistered sequential pilot plan v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "fixtureSeeds", "minimumRuns", "maximumRuns", "stageSize", "targetWilsonHalfWidth"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "fixtureSeeds": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "uniqueItems": true },
+    "minimumRuns": { "type": "integer", "minimum": 1 },
+    "maximumRuns": { "type": "integer", "minimum": 1 },
+    "stageSize": { "type": "integer", "minimum": 1 },
+    "targetWilsonHalfWidth": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 0.5 }
+  }
+}

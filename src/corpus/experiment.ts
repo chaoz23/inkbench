@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { writeFileAtomic, writeNdjsonAtomicFromJsonFiles } from "../core/atomic.js";
 import { benchmarkRunId } from "../core/identity.js";
 import { runBenchmark } from "../core/run.js";
-import { SCHEMA_VERSION, type AlgorithmId, type BudgetSpec, type CoverageCounts, type InkCheckOptions, type ResourceLimits, type RunReport, type RunRequest } from "../core/types.js";
+import { SCHEMA_VERSION, type AlgorithmId, type BudgetSpec, type CoverageCounts, type InkCheckOptions, type ResourceLimits, type RunReport, type RunRequest, type TerminalOutcomeCounts } from "../core/types.js";
+import { summarizeTerminalOutcomes } from "../analysis/outcomes.js";
 import { assertSummarizableRuns } from "../core/validation.js";
 import { scheduleAlgorithmBlocks } from "../experiments/schedule.js";
 import { getAuthoredCorpusManifest, listAuthoredStories, loadAuthoredFixture } from "./load.js";
@@ -23,6 +24,8 @@ export interface AuthoredExperimentConfig {
   cellOrder?: "configured" | "counterbalanced";
   scheduleSeed?: number;
   fixturePartition?: "development" | "validation" | "evaluation";
+  /** How repeated cells for deterministic algorithms should be interpreted. */
+  deterministicReplication?: "single" | "environment";
 }
 
 interface CoverageAggregate {
@@ -76,6 +79,7 @@ export interface AuthoredExperimentSummary {
   config: AuthoredExperimentConfig;
   totalRuns: number;
   successfulRuns: number;
+  terminalOutcomes: TerminalOutcomeCounts;
   coverage: AuthoredCoverageCell[];
   complementarity: AuthoredComplementarityCell[];
   interpretation: string;
@@ -220,6 +224,10 @@ export function runAuthoredExperiment(config: AuthoredExperimentConfig, onRun?: 
   if (config.storyIds.length === 0 || new Set(config.storyIds).size !== config.storyIds.length) throw new RangeError("storyIds must be non-empty and unique");
   if (config.algorithms.length === 0 || new Set(config.algorithms).size !== config.algorithms.length) throw new RangeError("algorithms must be non-empty and unique");
   if (config.searchSeeds.length === 0 || config.searchSeeds.some((seed) => !Number.isSafeInteger(seed) || seed < 0)) throw new RangeError("searchSeeds must contain non-negative safe integers");
+  if (config.deterministicReplication !== undefined && config.deterministicReplication !== "single" && config.deterministicReplication !== "environment") throw new RangeError("deterministicReplication must be single or environment");
+  if (config.algorithms.includes("systematic") && config.searchSeeds.length > 1 && config.deterministicReplication === undefined) {
+    throw new RangeError("multiple systematic search seeds require deterministicReplication=single or environment");
+  }
   if (config.budgets.length === 0 || config.budgets.some((budget) => !Number.isSafeInteger(budget) || budget < 1)) throw new RangeError("budgets must contain positive safe integers");
   if (config.budgetMode !== undefined && config.budgetMode !== "work" && config.budgetMode !== "wall-time") throw new RangeError("budgetMode must be work or wall-time");
   if (config.budgetMode === "wall-time" && (!Number.isSafeInteger(config.workBudgetCeiling) || (config.workBudgetCeiling ?? 0) < 1)) throw new RangeError("wall-time mode requires a positive workBudgetCeiling");
@@ -240,12 +248,17 @@ export function runAuthoredExperiment(config: AuthoredExperimentConfig, onRun?: 
 }
 
 export function plannedAuthoredCells(config: AuthoredExperimentConfig): PlannedAuthoredCell[] {
+  if (config.searchSeeds.length === 0) throw new RangeError("searchSeeds must be non-empty");
+  if (config.algorithms.includes("systematic") && config.searchSeeds.length > 1 && config.deterministicReplication === undefined) {
+    throw new RangeError("multiple systematic search seeds require deterministicReplication=single or environment");
+  }
   const blocks: Array<{ storyId: string; budget: number; searchSeed: number }> = [];
   for (const storyId of config.storyIds) for (const budget of config.budgets) for (const searchSeed of config.searchSeeds) {
     blocks.push({ storyId, budget, searchSeed });
   }
   const fixtures = new Map(config.storyIds.map((storyId) => [storyId, loadAuthoredFixture(storyId)]));
   return scheduleAlgorithmBlocks(blocks, config.algorithms, config.cellOrder, config.scheduleSeed)
+    .filter(({ value, algorithm }) => config.deterministicReplication !== "single" || algorithm !== "systematic" || value.searchSeed === config.searchSeeds[0])
     .map(({ value, algorithm, block, position }) => {
       const request = authoredRunRequest(config, fixtures.get(value.storyId)!, algorithm, value.searchSeed, value.budget);
       return { request, runId: benchmarkRunId(request), storyId: value.storyId, block, position };
@@ -283,6 +296,7 @@ export function summarizeAuthoredRuns(runs: RunReport[], config: AuthoredExperim
       config,
       totalRuns: runs.length,
       successfulRuns: runs.filter((run) => run.status === "completed").length,
+      terminalOutcomes: summarizeTerminalOutcomes(runs),
       coverage: coverageCells(runs, config),
       complementarity: complementarityCells(runs, config),
       interpretation: `Authored stories provide ecological-validity coverage and runtime-finding evidence. They have no planted oracle and are excluded from planted-bug probability and survival curves.${config.budgetMode === "wall-time" ? " Planned wall-time expiry is completed evidence; memory stops and prematurely reached work ceilings are incomplete." : ""}`,

@@ -27,10 +27,18 @@ Implemented ahead of the remaining v0.2 items: first-class planned wall-time bud
 
 ## v0.3.0 — corpus expansion and adapters
 
-- Broader real public Ink story corpus with licensing/provenance records and representativeness analysis.
+- Deterministic static/runtime corpus-complexity coordinates, a checked public scale envelope, and an aggregate-only private/local analyzer. **Implemented; broader licensed and owner-authorized evidence remains open.**
+- Broader real public Ink story corpus with licensing/provenance records and representativeness analysis. **External acquisition remains open.**
 - Stable adapter SDK and conformance suite.
 - Fully automated InkCheck adapter installation/version pinning.
 - Importable adapters for future searchers and hosted runners.
+
+## v0.4.0 — longitudinal maintenance value
+
+- Deterministic 1–30 revision streams spanning text, branch, threshold, bug introduction/fix/reintroduction, rare history, revisit, local refactor, and broad invalidating refactor edits. **Implemented.**
+- Cold, warm, periodic-rebuild, persistent-swarm, and no-rogue arms with fully charged replay/rebase and bounded portable route corpora. **Implemented.**
+- Atomic exact resume, revision-bound witnesses, learning curves, edit-class competence, complementarity, storage, and break-even accounting. **Implemented.**
+- Repeated validation and blind evaluation sequences demonstrating creator-cost value. **Evidence remains open.**
 
 ## InkSwarm research sequence
 

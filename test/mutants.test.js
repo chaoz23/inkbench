@@ -9,10 +9,27 @@ import {
   loadAuthoredFixture,
   loadAuthoredPlantedFixture,
   loadAuthoredPlantedWitnesses,
+  plannedMutantCells,
   runMutantExperiment,
   runMutantExperimentIsolated,
+  summarizeMutantRuns,
   writeMutantExperiment,
 } from "../dist/index.js";
+
+test("mutant deterministic replication is explicit and can collapse redundant systematic cells", () => {
+  const base = {
+    schemaVersion: 1,
+    storyIds: ["the-intercept-20"],
+    algorithms: ["random", "systematic"],
+    searchSeeds: [1, 2],
+    budgets: [10],
+    storySeed: 1,
+  };
+  assert.throws(() => plannedMutantCells(base), /deterministicReplication/);
+  const plan = plannedMutantCells({ ...base, deterministicReplication: "single" });
+  assert.equal(plan.filter((cell) => cell.request.algorithm === "random").length, 2);
+  assert.equal(plan.filter((cell) => cell.request.algorithm === "systematic").length, 1);
+});
 
 test("the Intercept derivative is isolated from the clean authored corpus", () => {
   const clean = loadAuthoredFixture("the-intercept");
@@ -90,6 +107,22 @@ test("authored-planted experiments score bug yield, per-bug competence, and comp
   assert.equal(result.summary.complementarity[0].pairedRuns, 1);
   assert.equal(result.summary.complementarity[0].bugOpportunities, 20);
   assert.ok(result.summary.bugYield.every((cell) => cell.meanBugsDiscovered > 0 && cell.meanBugsDiscovered < 20));
+  const stopped = {
+    ...result.runs[0],
+    status: "resource-stopped",
+    stopReason: "memory",
+    discoveredBugs: [],
+  };
+  const stoppedSummary = summarizeMutantRuns([stopped], {
+    schemaVersion: 1,
+    storyIds: ["the-intercept-20"],
+    algorithms: [stopped.algorithm],
+    searchSeeds: [stopped.searchSeed],
+    budgets: [stopped.budget.limit],
+    storySeed: stopped.storySeed,
+  }, "fixed");
+  assert.deepEqual(stoppedSummary.bugYield[0].probabilityAnyResourceStopSensitivity, { lower: 0, upper: 1 });
+  assert.deepEqual(stoppedSummary.perBug[0].resourceStopSensitivity, { lower: 0, upper: 1 });
 
   const output = mkdtempSync(join(tmpdir(), "inkbench-mutants-test-"));
   try {

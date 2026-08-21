@@ -15,6 +15,7 @@ test("experiment output preserves raw runs, probability, survival, and complemen
     budgets: [40],
     difficulty: 1,
     storySeed: 1,
+    deterministicReplication: "environment",
   };
   const result = runExperiment(config);
   assert.equal(result.runs.length, 16);

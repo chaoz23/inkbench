@@ -12,6 +12,12 @@
       "id": "dog-ink-adventure",
       "family": "function-and-loop-heavy",
       "projectSize": "small",
+      "complexity": {
+        "schemaVersion": 1,
+        "analyzer": "inkbench-corpus-complexity-v1",
+        "static": { "sourceFiles": 8, "sourceBytes": 11658, "sourceLines": 465, "includeDirectives": 7, "knots": 10, "stitches": 0, "choices": 15, "diverts": 31, "tunnels": 7, "functions": 26, "lists": 1, "variables": 18, "conditionalExpressions": 39, "compiledBytes": 22791, "compiledContainers": 983 },
+        "scaleRoles": ["small-project-calibration"]
+      },
       "directory": "dog-ink-adventure",
       "source": {
         "name": "Dog Ink Adventure",
@@ -59,6 +65,12 @@
       "id": "the-intercept",
       "family": "choice-dense-authored-story",
       "projectSize": "medium",
+      "complexity": {
+        "schemaVersion": 1,
+        "analyzer": "inkbench-corpus-complexity-v1",
+        "static": { "sourceFiles": 1, "sourceBytes": 100539, "sourceLines": 1687, "includeDirectives": 0, "knots": 30, "stitches": 30, "choices": 227, "diverts": 197, "tunnels": 2, "functions": 2, "lists": 0, "variables": 27, "conditionalExpressions": 155, "compiledBytes": 155242, "compiledContainers": 3439 },
+        "scaleRoles": ["choice-depth-public-proxy", "state-heavy-public-proxy"]
+      },
       "directory": "the-intercept",
       "source": {
         "name": "The Intercept",
@@ -99,6 +111,12 @@
       "id": "heresy2",
       "family": "stitch-heavy-random-authored-story",
       "projectSize": "large",
+      "complexity": {
+        "schemaVersion": 1,
+        "analyzer": "inkbench-corpus-complexity-v1",
+        "static": { "sourceFiles": 21, "sourceBytes": 172002, "sourceLines": 2697, "includeDirectives": 20, "knots": 30, "stitches": 189, "choices": 442, "diverts": 470, "tunnels": 6, "functions": 8, "lists": 0, "variables": 65, "conditionalExpressions": 307, "compiledBytes": 236080, "compiledContainers": 4428 },
+        "scaleRoles": ["include-heavy-public-proxy", "choice-depth-public-proxy", "state-heavy-public-proxy"]
+      },
       "directory": "heresy2",
       "source": {
         "name": "Heresy II",

@@ -14,6 +14,7 @@ import {
   runExperimentIsolated,
   writeAuthoredExperiment,
   writeExperiment,
+  auditGeneratedMatrix,
 } from "../dist/index.js";
 
 test("planted oracles are private scoring data, not search observations", () => {
@@ -290,6 +291,10 @@ test("isolated experiment matrices persist cells atomically and resume completed
     assert.equal(JSON.parse(readFileSync(join(directory, "matrix-state.json"), "utf8")).status, "complete");
     assert.ok(existsSync(join(directory, "cells", `${first.runs[0].runId}.json`)));
     assert.equal(readFileSync(join(directory, "runs.partial.ndjson"), "utf8").trim().split("\n").length, 1);
+    const audit = auditGeneratedMatrix(directory);
+    assert.equal(audit.promotionEligible, true);
+    assert.equal(audit.canonicalCells, 1);
+    assert.equal(audit.witnessReplayFailures, 0);
     const statePath = join(directory, "matrix-state.json");
     const state = JSON.parse(readFileSync(statePath, "utf8"));
     writeFileSync(statePath, `${JSON.stringify({ ...state, experimentFingerprint: "0".repeat(64) }, null, 2)}\n`, "utf8");
