@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chaoz23/inkbench/blob/main/schemas/corpus-complexity-report.schema.json",
+  "title": "InkBench corpus complexity report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "generatedAt", "privacyContract", "runtimeSamplingBudget", "stories", "observedEnvelope", "corpusGaps"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "generatedAt": { "type": "string" },
+    "privacyContract": { "type": "string" },
+    "runtimeSamplingBudget": { "type": "integer", "minimum": 0 },
+    "stories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["schemaVersion", "storyId", "visibility", "provenance", "static", "runtime", "scaleRoles"],
+        "properties": {
+          "schemaVersion": { "const": 1 },
+          "storyId": { "type": "string" },
+          "visibility": { "enum": ["public-redistributable", "local-private"] },
+          "provenance": { "type": "object" },
+          "static": { "type": "object" },
+          "runtime": { "type": ["object", "null"] },
+          "scaleRoles": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+        }
+      }
+    },
+    "observedEnvelope": { "type": "object" },
+    "corpusGaps": { "type": "array", "items": { "type": "string" }
+  }
+}

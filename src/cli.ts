@@ -15,12 +15,19 @@ import { runAuthoredExperimentIsolated } from "./corpus/isolated.js";
 import { listAuthoredPlantedStories, loadAuthoredPlantedFixture, loadAuthoredPlantedWitnesses } from "./mutants/load.js";
 import { runMutantExperiment, writeMutantExperiment, type MutantExperimentConfig } from "./mutants/experiment.js";
 import { runMutantExperimentIsolated } from "./mutants/isolated.js";
+import { analyzeAuthoredCorpus, analyzeLocalCorpus, type LocalCorpusConfig } from "./corpus/complexity.js";
+import { defaultLongitudinalConfig, runLongitudinalExperiment, type LongitudinalConfig } from "./longitudinal/experiment.js";
+import { generateRevisionSequence } from "./longitudinal/revisions.js";
+import { auditFixtureEquivalence } from "./fixtures/equivalence.js";
+import { auditSourceAwarePlacebos, calibrateInstrumentation } from "./analysis/calibration.js";
+import { auditGeneratedMatrix } from "./experiments/audit.js";
+import { evaluateSequentialPilot, type SequentialPilotPlan } from "./analysis/pilot.js";
 
 const ALGORITHMS: readonly AlgorithmId[] = ["random", "systematic", "coverage", "swarm", "inkcheck"];
 
 function usage(message?: string): never {
   if (message) console.error(`error: ${message}\n`);
-  console.error(`InkBench 0.2.0 — neutral planted-bug benchmarks for Ink search strategies
+  console.error(`InkBench 0.3.0 — neutral planted-bug benchmarks for Ink search strategies
 
 Usage:
   inkbench families
@@ -36,6 +43,7 @@ Usage:
                       [--worker-heap-mb N] [--progress ndjson|off]
   inkbench corpus list
   inkbench corpus verify
+  inkbench corpus analyze [--runtime-budget N] [--local-config FILE] [--out FILE]
   inkbench corpus run --story <id> --algorithm random|systematic|coverage|swarm|inkcheck
                       [--search-seed N] [--story-seed N] [--budget N]
                       [--time-budget-ms N] [--inkcheck-command PATH] [--json] [--isolated]
@@ -57,6 +65,12 @@ Usage:
                               [--out DIR] [--inkcheck-command PATH] [--isolated] [--resume]
                               [--max-memory-mb N] [--max-time-seconds N]
                               [--worker-heap-mb N] [--progress ndjson|off]
+  inkbench longitudinal generate [--sequence-seed N] [--partition development|validation|evaluation] [--revisions N]
+  inkbench longitudinal experiment [--preset smoke] [--config FILE] [--out DIR] [--resume] [--inkcheck-command PATH]
+  inkbench fixtures audit --family <name> [--seed-start N] [--seed-count N] [--difficulty N]
+  inkbench calibrate [--budget N] [--difficulty N] [--seed-start N] [--seed-count N] [--out FILE]
+  inkbench audit --artifacts DIR [--out FILE]
+  inkbench pilot evaluate --plan FILE --outcomes FILE [--out FILE]
 
 The primary in-process budget unit is one legal Ink choice transition. The
 InkCheck adapter retains InkCheck's native state unit and labels it explicitly.`);
@@ -135,6 +149,7 @@ function preset(name: string): ExperimentConfig {
       budgets: [100],
       difficulty: 2,
       storySeed: 1,
+      deterministicReplication: "environment",
     };
   }
   if (name === "development") {
@@ -147,6 +162,7 @@ function preset(name: string): ExperimentConfig {
       budgets: [100, 500],
       difficulty: 2,
       storySeed: 1,
+      deterministicReplication: "environment",
     };
   }
   if (name === "mature") {
@@ -159,6 +175,7 @@ function preset(name: string): ExperimentConfig {
       budgets: [1_000, 3_000, 10_000, 30_000, 100_000, 300_000, 1_000_000, 3_000_000, 10_000_000],
       difficulty: 3,
       storySeed: 1,
+      deterministicReplication: "environment",
       cellOrder: "counterbalanced",
       scheduleSeed: 7001,
       fixturePartition: "validation",
@@ -177,6 +194,7 @@ function preset(name: string): ExperimentConfig {
       workBudgetCeiling: 100_000_000,
       difficulty: 10,
       storySeed: 1,
+      deterministicReplication: "environment",
       cellOrder: "counterbalanced",
       scheduleSeed: 9001,
       fixturePartition: "evaluation",
@@ -211,6 +229,7 @@ function validateConfig(input: unknown): ExperimentConfig {
   if (record.budgetMode === "wall-time" && (!Number.isSafeInteger(record.workBudgetCeiling) || (record.workBudgetCeiling ?? 0) < 1)) usage("wall-time configs require a positive workBudgetCeiling");
   if (record.budgetMode === "wall-time" && record.resources?.maxTimeMs !== undefined) usage("wall-time configs cannot also use resources.maxTimeMs");
   if (record.cellOrder !== undefined && record.cellOrder !== "configured" && record.cellOrder !== "counterbalanced") usage("cellOrder must be configured or counterbalanced");
+  if (record.deterministicReplication !== undefined && record.deterministicReplication !== "single" && record.deterministicReplication !== "environment") usage("deterministicReplication must be single or environment");
   if (record.scheduleSeed !== undefined && !Number.isSafeInteger(record.scheduleSeed)) usage("scheduleSeed must be a safe integer");
   if (record.fixturePartition !== undefined && !["development", "validation", "evaluation"].includes(record.fixturePartition)) usage("fixturePartition must be development, validation, or evaluation");
   validateResources(record.resources);
@@ -342,6 +361,7 @@ function authoredPreset(name: string): AuthoredExperimentConfig {
       searchSeeds: [1, 2, 3],
       budgets: [500, 2_000],
       storySeed: 1,
+      deterministicReplication: "environment",
     };
   }
   if (name === "mature") {
@@ -352,6 +372,7 @@ function authoredPreset(name: string): AuthoredExperimentConfig {
       searchSeeds: Array.from({ length: 30 }, (_, index) => 101 + index),
       budgets: [1_000, 3_000, 10_000, 30_000, 100_000, 300_000, 1_000_000, 3_000_000, 10_000_000],
       storySeed: 1,
+      deterministicReplication: "environment",
       cellOrder: "counterbalanced",
       scheduleSeed: 7101,
       fixturePartition: "validation",
@@ -368,6 +389,7 @@ function authoredPreset(name: string): AuthoredExperimentConfig {
       budgetMode: "wall-time",
       workBudgetCeiling: 100_000_000,
       storySeed: 1,
+      deterministicReplication: "environment",
       cellOrder: "counterbalanced",
       scheduleSeed: 9101,
       fixturePartition: "evaluation",
@@ -409,6 +431,8 @@ function validateAuthoredConfig(input: unknown): AuthoredExperimentConfig {
   if (record.cellOrder !== undefined && record.cellOrder !== "configured" && record.cellOrder !== "counterbalanced") usage("cellOrder must be configured or counterbalanced");
   if (record.scheduleSeed !== undefined && !Number.isSafeInteger(record.scheduleSeed)) usage("scheduleSeed must be a safe integer");
   if (record.fixturePartition !== undefined && !["development", "validation", "evaluation"].includes(record.fixturePartition)) usage("fixturePartition must be development, validation, or evaluation");
+  if (record.deterministicReplication !== undefined && record.deterministicReplication !== "single" && record.deterministicReplication !== "environment") usage("deterministicReplication must be single or environment");
+  if (record.algorithms.includes("systematic") && (record.searchSeeds?.length ?? 0) > 1 && record.deterministicReplication === undefined) usage("multiple systematic search seeds require deterministicReplication=single or environment");
   validateResources(record.resources);
   return record as AuthoredExperimentConfig;
 }
@@ -426,6 +450,17 @@ async function commandCorpus(args: string[]): Promise<void> {
       const fixture = loadAuthoredFixture(story.id);
       console.log(`verified ${story.id}: ${Object.keys(fixture.sourceBundle.files).length} source file(s), ${fixture.manifest.locations.length} instrumented locations`);
     }
+    return;
+  }
+  if (action === "analyze") {
+    const runtimeBudget = integer(actionArgs, "--runtime-budget", 1_000, 0);
+    const localConfigPath = value(actionArgs, "--local-config");
+    const report = localConfigPath
+      ? analyzeLocalCorpus(JSON.parse(readFileSync(resolve(localConfigPath), "utf8")) as LocalCorpusConfig, runtimeBudget)
+      : analyzeAuthoredCorpus(runtimeBudget);
+    const output = value(actionArgs, "--out");
+    if (output) writeJsonAtomic(resolve(output), report);
+    else console.log(JSON.stringify(report, null, 2));
     return;
   }
   if (action === "run") {
@@ -485,7 +520,92 @@ async function commandCorpus(args: string[]): Promise<void> {
     console.log(`wrote ${result.runs.length} authored-project runs and separate summaries to ${output}`);
     return;
   }
-  usage("corpus requires list, verify, run, or experiment");
+  usage("corpus requires list, verify, analyze, run, or experiment");
+}
+
+function longitudinalPartition(args: string[]): LongitudinalConfig["partition"] {
+  const partition = value(args, "--partition") ?? "development";
+  if (!['development', 'validation', 'evaluation'].includes(partition)) usage("--partition must be development, validation, or evaluation");
+  return partition as LongitudinalConfig["partition"];
+}
+
+function commandLongitudinal(args: string[]): void {
+  const [action, ...actionArgs] = args;
+  if (action === "generate") {
+    const revisions = generateRevisionSequence(
+      integer(actionArgs, "--sequence-seed", 1),
+      longitudinalPartition(actionArgs),
+      integer(actionArgs, "--revisions", 12),
+    );
+    console.log(JSON.stringify(revisions.map(({ fixture, ...revision }) => ({ ...revision, source: fixture.source, manifest: fixture.manifest })), null, 2));
+    return;
+  }
+  if (action === "experiment") {
+    const configPath = value(actionArgs, "--config");
+    const presetName = value(actionArgs, "--preset") ?? "smoke";
+    if (!configPath && presetName !== "smoke") usage("the only built-in longitudinal preset is smoke");
+    let config = configPath
+      ? JSON.parse(readFileSync(resolve(configPath), "utf8")) as LongitudinalConfig
+      : defaultLongitudinalConfig();
+    const inkcheckCommand = value(actionArgs, "--inkcheck-command");
+    if (inkcheckCommand) config = { ...config, inkcheckCommand };
+    const output = resolve(value(actionArgs, "--out") ?? "artifacts/longitudinal-smoke");
+    const result = runLongitudinalExperiment(config, {
+      outputDirectory: output,
+      resume: actionArgs.includes("--resume"),
+      onCell: (cell, completed, total, resumed) => console.error(`[${completed}/${total}] sequence=${cell.sequenceSeed} revision=${cell.revision} ${cell.arm} bugs=${cell.discoveredBugIds.length} replay=${cell.replaySuccesses}/${cell.replayAttempts}${resumed ? " resumed" : ""}`),
+    });
+    console.log(`wrote ${result.cells.length} longitudinal cells to ${output}`);
+    return;
+  }
+  usage("longitudinal requires generate or experiment");
+}
+
+function commandFixtures(args: string[]): void {
+  const [action, ...actionArgs] = args;
+  if (action !== "audit") usage("fixtures requires audit");
+  const start = integer(actionArgs, "--seed-start", 1);
+  const count = integer(actionArgs, "--seed-count", 20);
+  const report = auditFixtureEquivalence(familyArg(actionArgs), Array.from({ length: count }, (_, index) => start + index), integer(actionArgs, "--difficulty", 3));
+  console.log(JSON.stringify(report, null, 2));
+}
+
+function commandCalibrate(args: string[]): void {
+  const start = integer(args, "--seed-start", 1);
+  const count = integer(args, "--seed-count", 3);
+  const seeds = Array.from({ length: count }, (_, index) => start + index);
+  const report = {
+    instrumentation: calibrateInstrumentation([...BUG_FAMILIES], seeds, integer(args, "--budget", 1_000), integer(args, "--difficulty", 3)),
+    sourceAwarePlacebos: BUG_FAMILIES.map((family) => auditSourceAwarePlacebos(family, Array.from({ length: 100 }, (_, index) => index + 1))),
+  };
+  const output = value(args, "--out");
+  if (output) writeJsonAtomic(resolve(output), report);
+  else console.log(JSON.stringify(report, null, 2));
+}
+
+function commandAudit(args: string[]): void {
+  const directory = value(args, "--artifacts");
+  if (!directory) usage("audit requires --artifacts DIR");
+  const report = auditGeneratedMatrix(resolve(directory));
+  const output = value(args, "--out");
+  if (output) writeJsonAtomic(resolve(output), report);
+  else console.log(JSON.stringify(report, null, 2));
+  if (!report.promotionEligible) process.exitCode = 1;
+}
+
+function commandPilot(args: string[]): void {
+  const [action, ...actionArgs] = args;
+  if (action !== "evaluate") usage("pilot requires evaluate");
+  const planPath = value(actionArgs, "--plan");
+  const outcomesPath = value(actionArgs, "--outcomes");
+  if (!planPath || !outcomesPath) usage("pilot evaluate requires --plan FILE and --outcomes FILE");
+  const plan = JSON.parse(readFileSync(resolve(planPath), "utf8")) as SequentialPilotPlan;
+  const outcomes = JSON.parse(readFileSync(resolve(outcomesPath), "utf8")) as unknown;
+  if (!Array.isArray(outcomes) || !outcomes.every((item) => typeof item === "boolean")) usage("outcomes must be a JSON array of booleans");
+  const report = evaluateSequentialPilot(plan, outcomes);
+  const output = value(actionArgs, "--out");
+  if (output) writeJsonAtomic(resolve(output), report);
+  else console.log(JSON.stringify(report, null, 2));
 }
 
 function mutantStoryArg(args: string[]): string {
@@ -515,6 +635,7 @@ function mutantPreset(name: string): MutantExperimentConfig {
       searchSeeds: [1, 2, 3, 4, 5],
       budgets: [100, 1_000, 10_000],
       storySeed: 1,
+      deterministicReplication: "environment",
       resources: { maxMemoryMb: 1_536, maxTimeMs: 300_000, progressIntervalTransitions: 10_000 },
     };
   }
@@ -526,6 +647,7 @@ function mutantPreset(name: string): MutantExperimentConfig {
       searchSeeds: Array.from({ length: 30 }, (_, index) => 101 + index),
       budgets: [1_000, 10_000, 100_000, 1_000_000, 10_000_000],
       storySeed: 1,
+      deterministicReplication: "environment",
       cellOrder: "counterbalanced",
       scheduleSeed: 7201,
       fixturePartition: "validation",
@@ -542,6 +664,7 @@ function mutantPreset(name: string): MutantExperimentConfig {
       budgetMode: "wall-time",
       workBudgetCeiling: 100_000_000,
       storySeed: 1,
+      deterministicReplication: "environment",
       cellOrder: "counterbalanced",
       scheduleSeed: 9201,
       fixturePartition: "evaluation",
@@ -583,6 +706,8 @@ function validateMutantConfig(input: unknown): MutantExperimentConfig {
   if (record.cellOrder !== undefined && record.cellOrder !== "configured" && record.cellOrder !== "counterbalanced") usage("cellOrder must be configured or counterbalanced");
   if (record.scheduleSeed !== undefined && !Number.isSafeInteger(record.scheduleSeed)) usage("scheduleSeed must be a safe integer");
   if (record.fixturePartition !== undefined && !["development", "validation", "evaluation"].includes(record.fixturePartition)) usage("fixturePartition must be development, validation, or evaluation");
+  if (record.deterministicReplication !== undefined && record.deterministicReplication !== "single" && record.deterministicReplication !== "environment") usage("deterministicReplication must be single or environment");
+  if (record.algorithms.includes("systematic") && (record.searchSeeds?.length ?? 0) > 1 && record.deterministicReplication === undefined) usage("multiple systematic search seeds require deterministicReplication=single or environment");
   validateResources(record.resources);
   return record as MutantExperimentConfig;
 }
@@ -698,6 +823,16 @@ if (command === "families") {
   await commandCorpus(args);
 } else if (command === "mutants") {
   await commandMutants(args);
+} else if (command === "longitudinal") {
+  commandLongitudinal(args);
+} else if (command === "fixtures") {
+  commandFixtures(args);
+} else if (command === "calibrate") {
+  commandCalibrate(args);
+} else if (command === "audit") {
+  commandAudit(args);
+} else if (command === "pilot") {
+  commandPilot(args);
 } else {
   usage(`unknown command ${command}`);
 }

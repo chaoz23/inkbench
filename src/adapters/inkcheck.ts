@@ -327,6 +327,8 @@ function failedAdapterRun(
       informationRegime: "full-source",
       instrumentationRegime: request.fixture.tier === "authored-planted" ? "external-private-signal" : "external-native",
       commonCoverageCharged: false,
+      observableFields: ["fullInkSource", "inkcheckNativeRuntimeEvidence"],
+      sourcePrivileges: ["full-source", "static-analysis-permitted"],
     },
     fixtureSeed: request.fixture.manifest.seed,
     searchSeed: request.searchSeed,
@@ -346,7 +348,7 @@ function failedAdapterRun(
       wallMs,
       cpuMs: null,
       discoveryTimeOrigin: "final-report",
-      phases: { setupMs: null, searchMs: null, scoringMs: null, finalizationMs: null },
+      phases: { setupMs: null, compileLoadMs: null, adapterStartupMs: null, searchMs: null, scoringMs: null, replayScoringMs: null, evidenceSerializationMs: null, finalizationMs: null },
     },
     parallelism: { requested: request.inkcheckOptions === undefined ? 1 : request.inkcheckOptions.concurrency ?? "auto", effective: null, mode: status === "adapter-unavailable" ? "unavailable" : "external-process-failed" },
     stopReason: "error",
@@ -474,6 +476,7 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
     const stderrFd = openSync(stderrPath, "w");
     const childRuntime = childNodeOptions(request.resources?.maxMemoryMb);
     let child: ReturnType<typeof spawnSync>;
+    const spawnStarted = performance.now();
     try {
       child = spawnSync(executable, args, {
         stdio: ["ignore", stdoutFd, stderrFd],
@@ -486,7 +489,7 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
     }
     const stderr = readFileSync(stderrPath, "utf8");
     const reportBytes = statSync(stdoutPath).size;
-    const childWallMs = performance.now() - started;
+    const childWallMs = performance.now() - spawnStarted;
     if (child.error && (child.error as NodeJS.ErrnoException).code === "ENOENT") {
       return failedAdapterRun(request, runId, childWallMs, child.error.message, "adapter-unavailable");
     }
@@ -539,6 +542,8 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
         informationRegime: "full-source",
         instrumentationRegime: request.fixture.tier === "authored-planted" ? "external-private-signal" : "external-native",
         commonCoverageCharged: false,
+        observableFields: ["fullInkSource", "inkcheckNativeRuntimeEvidence"],
+        sourcePrivileges: ["full-source", "static-analysis-permitted"],
       },
       fixtureSeed: request.fixture.manifest.seed,
       searchSeed: request.searchSeed,
@@ -564,10 +569,14 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
         cpuMs: null,
         discoveryTimeOrigin: transport === "bounded-stream" ? "tool-global" : "final-report",
         phases: {
-          setupMs: null,
-          searchMs: parsed.elapsedMs ?? null,
+          setupMs: spawnStarted - started,
+          compileLoadMs: null,
+          adapterStartupMs: spawnStarted - started,
+          searchMs: childWallMs,
           scoringMs: scoringEnded - scoringStarted,
-          finalizationMs: null,
+          replayScoringMs: scoringEnded - scoringStarted,
+          evidenceSerializationMs: null,
+          finalizationMs: Math.max(0, performance.now() - scoringEnded),
         },
       },
       parallelism: {
@@ -607,6 +616,7 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
           ? ["Used InkCheck's globally elapsed evidence timestamps for wall-time survival analysis; pass-local state positions remain excluded from work-unit survival curves."]
           : ["InkCheck portfolio finding positions are pass-local, so discovery timing is final-only and must not enter survival curves."]),
         "InkCheck does not expose the full InkBench empirical edge/state metric set, so coverage is null; its native heap telemetry is retained separately with external-adapter provenance.",
+        "External child CPU time and peak RSS are unavailable from the current InkCheck contract and remain null rather than being inferred.",
       ],
     };
   } finally {

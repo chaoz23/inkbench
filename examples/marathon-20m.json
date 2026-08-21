@@ -18,6 +18,7 @@
   "workBudgetCeiling": 100000000,
   "difficulty": 10,
   "storySeed": 1,
+  "deterministicReplication": "environment",
   "cellOrder": "counterbalanced",
   "scheduleSeed": 9001,
   "fixturePartition": "evaluation",

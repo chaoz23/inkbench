@@ -6,10 +6,26 @@ import test from "node:test";
 import {
   listAuthoredStories,
   loadAuthoredFixture,
+  plannedAuthoredCells,
   runAuthoredExperiment,
   runBenchmark,
   writeAuthoredExperiment,
 } from "../dist/index.js";
+
+test("authored deterministic replication is explicit and can collapse redundant systematic cells", () => {
+  const base = {
+    schemaVersion: 1,
+    storyIds: ["the-intercept"],
+    algorithms: ["random", "systematic"],
+    searchSeeds: [1, 2],
+    budgets: [10],
+    storySeed: 1,
+  };
+  assert.throws(() => plannedAuthoredCells(base), /deterministicReplication/);
+  const plan = plannedAuthoredCells({ ...base, deterministicReplication: "single" });
+  assert.equal(plan.filter((cell) => cell.request.algorithm === "random").length, 2);
+  assert.equal(plan.filter((cell) => cell.request.algorithm === "systematic").length, 1);
+});
 
 test("authored corpus is pinned, licensed, and separated from planted fixtures", () => {
   const stories = listAuthoredStories();

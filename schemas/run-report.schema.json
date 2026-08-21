@@ -35,11 +35,13 @@
     },
     "observability": {
       "type": "object",
-      "required": ["informationRegime", "instrumentationRegime", "commonCoverageCharged"],
+      "required": ["informationRegime", "instrumentationRegime", "commonCoverageCharged", "observableFields", "sourcePrivileges"],
       "properties": {
         "informationRegime": { "enum": ["runtime-observation", "compiled-artifact", "full-source"] },
         "instrumentationRegime": { "enum": ["inkbench-common", "external-native", "external-private-signal"] },
-        "commonCoverageCharged": { "type": "boolean" }
+        "commonCoverageCharged": { "type": "boolean" },
+        "observableFields": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "sourcePrivileges": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
       }
     },
     "fixtureSeed": { "type": "integer" },
@@ -96,7 +98,17 @@
         "discoveryTimeOrigin": { "enum": ["search-active", "tool-global", "final-report"] },
         "phases": {
           "type": "object",
-          "required": ["setupMs", "searchMs", "scoringMs", "finalizationMs"]
+          "required": ["setupMs", "compileLoadMs", "adapterStartupMs", "searchMs", "scoringMs", "replayScoringMs", "evidenceSerializationMs", "finalizationMs"],
+          "properties": {
+            "setupMs": { "type": ["number", "null"], "minimum": 0 },
+            "compileLoadMs": { "type": ["number", "null"], "minimum": 0 },
+            "adapterStartupMs": { "type": ["number", "null"], "minimum": 0 },
+            "searchMs": { "type": ["number", "null"], "minimum": 0 },
+            "scoringMs": { "type": ["number", "null"], "minimum": 0 },
+            "replayScoringMs": { "type": ["number", "null"], "minimum": 0 },
+            "evidenceSerializationMs": { "type": ["number", "null"], "minimum": 0 },
+            "finalizationMs": { "type": ["number", "null"], "minimum": 0 }
+          }
         }
       }
     },

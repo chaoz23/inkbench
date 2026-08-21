@@ -1,6 +1,7 @@
 export { BUG_FAMILIES, INKBENCH_VERSION, PROGRESS_SCHEMA_VERSION, RUN_CONTRACT_VERSION, RUN_REPORT_SCHEMA_VERSION, SCHEMA_VERSION } from "./core/types.js";
 export type * from "./core/types.js";
 export { generateFixture } from "./fixtures/generate.js";
+export { assertFixtureSeedPartition, auditFixtureEquivalence, fixtureTopologyFingerprint } from "./fixtures/equivalence.js";
 export { benchmarkRunId, executionFingerprint, executionFingerprintDigest, harnessArtifactSha256 } from "./core/identity.js";
 export { runBenchmark } from "./core/run.js";
 export { runBenchmarkIsolated } from "./core/isolated.js";
@@ -15,7 +16,16 @@ export { experimentSchedule, scheduleAlgorithmBlocks } from "./experiments/sched
 export { runExperimentIsolated } from "./experiments/isolated.js";
 export type { IsolatedExperimentOptions } from "./experiments/isolated.js";
 export { summarizeRuns, renderMarkdown } from "./experiments/summarize.js";
+export { auditGeneratedMatrix } from "./experiments/audit.js";
+export type * from "./experiments/audit.js";
+export { auditSourceAwarePlacebos, calibrateInstrumentation } from "./analysis/calibration.js";
+export type * from "./analysis/calibration.js";
+export { summarizeTerminalOutcomes } from "./analysis/outcomes.js";
+export { evaluateSequentialPilot, validateSequentialPilotPlan } from "./analysis/pilot.js";
+export type * from "./analysis/pilot.js";
 export { getAuthoredCorpusManifest, listAuthoredStories, loadAuthoredFixture } from "./corpus/load.js";
+export { analyzeAuthoredCorpus, analyzeLocalCorpus, analyzeRuntimeComplexity, analyzeStaticComplexity, CORPUS_COMPLEXITY_SCHEMA_VERSION } from "./corpus/complexity.js";
+export type * from "./corpus/complexity.js";
 export { plannedAuthoredCells, runAuthoredExperiment, summarizeAuthoredRuns, writeAuthoredExperiment, renderAuthoredMarkdown } from "./corpus/experiment.js";
 export type * from "./corpus/experiment.js";
 export { runAuthoredExperimentIsolated } from "./corpus/isolated.js";
@@ -26,3 +36,7 @@ export { plannedMutantCells, renderMutantMarkdown, runMutantExperiment, summariz
 export type * from "./mutants/experiment.js";
 export { runMutantExperimentIsolated } from "./mutants/isolated.js";
 export type { IsolatedMutantExperimentOptions } from "./mutants/isolated.js";
+export { generateRevisionSequence, LONGITUDINAL_REVISION_SCHEMA_VERSION } from "./longitudinal/revisions.js";
+export type * from "./longitudinal/revisions.js";
+export { defaultLongitudinalConfig, LONGITUDINAL_EXPERIMENT_SCHEMA_VERSION, runLongitudinalExperiment } from "./longitudinal/experiment.js";
+export type * from "./longitudinal/experiment.js";

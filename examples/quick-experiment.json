@@ -6,5 +6,6 @@
   "searchSeeds": [1, 2, 3],
   "budgets": [100, 500],
   "difficulty": 2,
-  "storySeed": 1
+  "storySeed": 1,
+  "deterministicReplication": "environment"
 }

@@ -3,6 +3,7 @@
   "storyIds": ["the-intercept-20"],
   "algorithms": ["random", "systematic", "coverage", "swarm"],
   "searchSeeds": [1, 2, 3, 4, 5],
+  "deterministicReplication": "environment",
   "budgets": [100, 1000, 10000],
   "storySeed": 1,
   "resources": {

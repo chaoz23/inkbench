@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chaoz23/inkbench/blob/main/schemas/longitudinal-revision-sequence.schema.json",
+  "title": "InkBench longitudinal revision sequence v1",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["schemaVersion", "sequenceId", "sequenceSeed", "partition", "revision", "revisionId", "parentRevisionId", "sourceSha256", "editClass", "activeBugIds"],
+    "properties": {
+      "schemaVersion": { "const": 1 },
+      "sequenceId": { "type": "string" },
+      "sequenceSeed": { "type": "integer" },
+      "partition": { "enum": ["development", "validation", "evaluation"] },
+      "revision": { "type": "integer", "minimum": 0 },
+      "revisionId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+      "parentRevisionId": { "type": ["string", "null"] },
+      "sourceSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+      "editClass": { "type": "string" },
+      "activeBugIds": { "type": "array", "items": { "type": "string" } }
+    }
+  }
+}

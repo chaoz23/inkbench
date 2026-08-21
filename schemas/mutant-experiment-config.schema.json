@@ -27,6 +27,7 @@
     "cellOrder": { "enum": ["configured", "counterbalanced"] },
     "scheduleSeed": { "type": "integer" },
     "fixturePartition": { "enum": ["development", "validation", "evaluation"] },
+    "deterministicReplication": { "enum": ["single", "environment"] },
     "inkcheckCommand": { "type": "string", "minLength": 1 },
     "inkcheckOptions": {
       "type": "object",

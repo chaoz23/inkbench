@@ -4,11 +4,13 @@ InkBench is a neutral, reproducible benchmarking harness for measuring how effec
 
 It does not exist to make InkSwarm win. It exists to discover whether InkSwarm—or any future searcher—improves bug yield per fixed compute budget or reliably finds classes of failures that simpler strategies miss.
 
-Version 0.2.0 is a working research harness: it generates Ink fixtures, runs a pinned and licensed three-project authored corpus, includes a reproducible 20-bug derivative of The Intercept, enforces transition and wall-time budgets, runs four internal strategies, invokes the real InkCheck CLI when configured, records exact repro paths, and emits raw datasets plus competence, survival, coverage, and complementarity summaries.
+Version 0.3.0 is a working research harness: it generates Ink fixtures, runs a pinned and licensed three-project authored corpus, includes a reproducible 20-bug derivative of The Intercept, enforces transition and wall-time budgets, runs four internal strategies, invokes the real InkCheck CLI when configured, records exact repro paths, and emits raw datasets plus competence, survival, coverage, and complementarity summaries.
 
 The 0.2.0 release adds the resource-bounded execution layer needed for mature InkSwarm experiments: explicit checkpoint ownership, heap/time guards, isolated workers, streamed progress, atomic partial evidence, and resumable experiment matrices.
 
-## What ships in 0.2.0
+The 0.3.0 release adds the validity work tracked in issues #2–#9: structural-equivalence and source-placebo audits, fail-closed seed partitions, explicit deterministic replication, resource-stop sensitivity bounds, common terminal/timing/observability contracts, a corpus-complexity analyzer, and a persistent longitudinal benchmark across evolving story revisions. These APIs are implemented and tested, but their held-out evaluation gates remain open; see [the implementation audit](docs/open-issues-implementation-audit.md).
+
+## What ships in 0.3.0
 
 - Deterministic procedural generators for all eleven initial bug families.
 - Separate fixture, search, and Ink-runtime seeds.
@@ -73,15 +75,18 @@ The package binary is also named `inkbench` after installation.
 
 Each generated fixture has a machine-readable manifest with difficulty coordinates for depth, width, state dimensionality, rarity, delay, revisit, deception, and order. Searchers never receive the manifest or generator targets.
 
-## Three benchmark tiers
+## Four benchmark tiers
 
 | Tier | Question | Primary evidence |
 | --- | --- | --- |
 | `generated-planted` | Does a strategy find a known defect within budget? | discovery probability, time-to-discovery, survival, bug-family competence, exclusive bugs |
 | `authored-planted` | Can a strategy find diverse known defects in realistic authored structure? | bugs found per run, per-bug probability, fault-type competence, paired exclusive bugs |
 | `authored-project` | Does behavior transfer to realistic Ink structure? | empirical state/edge/location coverage, runtime findings, compute cost, paired exclusive coverage |
+| `longitudinal` | Does reusable search knowledge repay its maintenance cost as one story evolves? | cumulative yield, replay/rebase cost, stale-route loss, edit-class competence, storage, break-even |
 
 The tiers are deliberately not pooled. Clean real stories have no planted-bug oracle, so a higher coverage count is neither a bug discovery nor proof-relative coverage. The authored-planted tier is a disclosed mutation experiment, not evidence about the upstream story's quality.
+
+The longitudinal tier uses deterministic checksum-linked revisions and charges replay, validation, rebasing, and exploration to the same per-revision grant. It stores portable route recipes—not raw Ink save states—across revisions. See [the longitudinal contract](docs/longitudinal-benchmark.md).
 
 The authored corpus is inherited from InkCheck's promotion corpus and includes:
 
@@ -216,6 +221,9 @@ inkbench corpus list
 inkbench corpus run --story the-intercept --algorithm coverage --budget 1000
 inkbench corpus experiment --preset smoke --out artifacts/corpus-smoke
 inkbench corpus experiment --config examples/authored-smoke.json --out artifacts/corpus-configured
+
+# Analyze the public corpus, or aggregate-only local/private complexity metadata
+inkbench corpus analyze --runtime-budget 1000 --out artifacts/corpus-complexity.json
 ```
 
 The authored summary reports empirical coverage and paired exclusive locations/edges. Its raw runs carry `benchmarkTier: "authored-project"`, an empty `plantedBugIds` array, item-level coverage hashes, and reproducible runtime-warning/error paths. Add `--inkcheck-command` to either corpus command to exercise the real InkCheck adapter; InkCheck retains its native state unit and unavailable item-level metrics remain `null`.
@@ -229,6 +237,15 @@ inkbench mutants experiment --config examples/intercept-20-development.json --ou
 ```
 
 Its summary reports mean/median/max distinct bugs per run, the discovered fraction of 20, probability of any/all discoveries, per-bug probabilities and discovery times, and paired exclusive `(search seed, bug)` discoveries. Fixed-budget cells count only completed runs; resource-stopped evidence remains in raw and resource outputs.
+
+Longitudinal experiments have their own resumable command and report contracts:
+
+```sh
+inkbench longitudinal generate --sequence-seed 1 --partition development --revisions 12
+inkbench longitudinal experiment --config examples/longitudinal-smoke.json --out artifacts/longitudinal-smoke --resume
+```
+
+Methodology checks are executable rather than prose-only. `inkbench fixtures audit`, `inkbench calibrate`, and `inkbench audit --artifacts DIR` test structural replication, instrumentation effects, and durable marathon identity/outcome integrity. `inkbench pilot evaluate` applies a preregistered staged precision rule without optional stopping between boundaries.
 
 ## Reading results honestly
 

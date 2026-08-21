@@ -3,11 +3,18 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { hash } from "../core/hash.js";
 import { SCHEMA_VERSION, type AuthoredFixture, type AuthoredStoryFamily, type CorpusSourceMetadata } from "../core/types.js";
+import type { StaticComplexityCoordinates } from "./complexity.js";
 
 export interface AuthoredCorpusCase {
   id: string;
   family: AuthoredStoryFamily;
   projectSize: "small" | "medium" | "large";
+  complexity: {
+    schemaVersion: 1;
+    analyzer: "inkbench-corpus-complexity-v1";
+    static: StaticComplexityCoordinates;
+    scaleRoles: string[];
+  };
   directory: string;
   source: CorpusSourceMetadata & {
     licenseSha256: string;
@@ -58,6 +65,7 @@ function verifyManifest(): void {
     validateRelativeName(entry.source.licenseFile);
     validateRelativeName(entry.compiled.file);
     if (!(entry.source.entrypoint in entry.files)) throw new Error(`${entry.id}: entrypoint is not listed in files`);
+    if (entry.complexity?.schemaVersion !== 1 || entry.complexity.analyzer !== "inkbench-corpus-complexity-v1") throw new Error(`${entry.id}: missing corpus complexity coordinates`);
     for (const [filename, digest] of Object.entries(entry.files)) {
       validateRelativeName(filename);
       if (!/^[0-9a-f]{64}$/.test(digest)) throw new Error(`${entry.id}: invalid SHA-256 for ${filename}`);

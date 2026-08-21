@@ -1,7 +1,7 @@
 export const SCHEMA_VERSION = 1 as const;
 export const RUN_REPORT_SCHEMA_VERSION = 4 as const;
 export const PROGRESS_SCHEMA_VERSION = 2 as const;
-export const INKBENCH_VERSION = "0.2.0" as const;
+export const INKBENCH_VERSION = "0.3.0" as const;
 export const RUN_CONTRACT_VERSION = "marathon-v4" as const;
 
 export type BugFamily =
@@ -103,7 +103,7 @@ export interface AuthoredPlantedBug extends PlantedBug {
 
 export interface FixtureManifest {
   schemaVersion: typeof SCHEMA_VERSION;
-  generatorVersion: "0.2.0";
+  generatorVersion: "0.2.0" | "longitudinal-v1";
   fixtureId: string;
   family: BugFamily;
   seed: number;
@@ -128,7 +128,7 @@ export interface SourceBundle {
 export interface CorpusSourceMetadata {
   name: string;
   author: string;
-  license: "MIT" | "CC-BY-4.0";
+  license: "MIT" | "CC-BY-4.0" | "proprietary" | "other";
   repository: string;
   commit: string;
   licenseFile: string;
@@ -301,8 +301,12 @@ export interface RunTiming {
   discoveryTimeOrigin: "search-active" | "tool-global" | "final-report";
   phases: {
     setupMs: number | null;
+    compileLoadMs: number | null;
+    adapterStartupMs: number | null;
     searchMs: number | null;
     scoringMs: number | null;
+    replayScoringMs: number | null;
+    evidenceSerializationMs: number | null;
     finalizationMs: number | null;
   };
 }
@@ -385,6 +389,17 @@ export interface ObservabilityContract {
   informationRegime: "runtime-observation" | "compiled-artifact" | "full-source";
   instrumentationRegime: "inkbench-common" | "external-native" | "external-private-signal";
   commonCoverageCharged: boolean;
+  observableFields: string[];
+  sourcePrivileges: string[];
+}
+
+export interface TerminalOutcomeCounts {
+  launched: number;
+  completed: number;
+  resourceStopped: number;
+  failed: number;
+  byStatus: Record<RunReport["status"], number>;
+  byStopReason: Record<ResourceStopReason, number>;
 }
 
 export interface RunProgressEvent {
@@ -493,6 +508,8 @@ export interface ExperimentConfig {
   storySeed: number;
   /** Deterministic serial execution policy. Marathon presets must use counterbalanced. */
   cellOrder?: "configured" | "counterbalanced";
+  /** Multiple deterministic DFS seeds are forbidden unless explicitly classified as environment replication. */
+  deterministicReplication?: "single" | "environment";
   scheduleSeed?: number;
   fixturePartition?: "development" | "validation" | "evaluation";
   inkcheckCommand?: string;
@@ -511,6 +528,8 @@ export interface ProbabilityCell {
   /** Observed-anytime discovery probability over valid launched cells. */
   probability: number;
   interval95: { lower: number; upper: number };
+  /** Sensitivity bounds if every unresolved resource stop missed/found the bug. */
+  resourceStopSensitivity: { lower: number; upper: number };
   completedDiscoveries: number;
   completedProbability: number | null;
   medianTransitionsToDiscovery: number | null;
@@ -579,6 +598,15 @@ export interface ExperimentSummary {
   config: ExperimentConfig;
   totalRuns: number;
   successfulRuns: number;
+  terminalOutcomes: TerminalOutcomeCounts;
+  replication: Array<{
+    family: BugFamily;
+    fixtureSeeds: number;
+    uniqueTopologies: number;
+    searchSeeds: number;
+    effectiveIndependentFixtureSamples: number;
+    interpretation: string;
+  }>;
   probability: ProbabilityCell[];
   survival: SurvivalPoint[];
   survivalTime: SurvivalTimePoint[];
