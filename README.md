@@ -4,6 +4,8 @@ InkBench is a neutral, reproducible benchmarking harness for measuring how effec
 
 It does not exist to make InkSwarm win. It exists to discover whether InkSwarm—or any future searcher—improves bug yield per fixed compute budget or reliably finds classes of failures that simpler strategies miss.
 
+**Outcome (2026-10-21): the InkSwarm hypothesis is closed, unsupported.** Across the measured fixture families and budgets the population approach produced no exclusive discovery and spent its budget less effectively than the simple baselines on most failure classes. That is the benchmark doing its job. The `swarm` searcher stays in the tree as a frozen comparison baseline; see the [closeout](docs/inkswarm-closeout.md). InkBench itself continues — it evaluates any searcher, InkCheck included.
+
 Version 0.3.0 is a working research harness: it generates Ink fixtures, runs a pinned and licensed three-project authored corpus, includes a reproducible 20-bug derivative of The Intercept, enforces transition and wall-time budgets, runs four internal strategies, invokes the real InkCheck CLI when configured, records exact repro paths, and emits raw datasets plus competence, survival, coverage, and complementarity summaries.
 
 The 0.2.0 release adds the resource-bounded execution layer needed for mature InkSwarm experiments: explicit checkpoint ownership, heap/time guards, isolated workers, streamed progress, atomic partial evidence, and resumable experiment matrices.
@@ -169,7 +171,7 @@ Replace `20m` with `60m` without changing seeds or policy. On the current 8 GiB 
 | `random` | Seeded uniform choices in root-started episodes; calibration baseline |
 | `systematic` | Deterministic DFS with semantic-state deduplication; not called InkCheck |
 | `coverage` | Small semantic coverage/yield priority frontier; the critical simple control |
-| `swarm` | Minimal novelty, behavioral saturation, saved colonies, pruning, short local walks, and 15% rogues |
+| `swarm` | Minimal novelty, behavioral saturation, saved colonies, pruning, short local walks, and 15% rogues. **Frozen baseline** (`minimal-colony-v1`); research line closed, retained for reproducibility |
 | `inkcheck` | Optional subprocess adapter to the real InkCheck CLI |
 
 To use InkCheck:
@@ -270,11 +272,13 @@ The [v0.2 resource-bounded smoke](docs/v0.2-resource-smoke-results.md) verifies 
 
 The [v0.1 Intercept-20 smoke](docs/v0.1-intercept-20-smoke-results.md) verifies multi-bug yield, per-bug competence, and paired complementarity on one tiny cell. Its apparent exclusive discovery is explicitly not a swarm claim without the repeated mature matrix.
 
-## Why InkBench and InkSwarm are separate
+## Why InkBench and InkSwarm were separate
 
-[InkCheck](https://github.com/chaoz23/inkcheck) already offers bounded, deterministic mechanical QA with a mature search portfolio and exact replay. InkSwarm should not pretend that work is merely naïve graph traversal. Its hypothesis is narrower: a finite population that allocates work toward unusual, deep, underexplored narrative states may improve rare-state yield or provide complementary discoveries.
+[InkCheck](https://github.com/chaoz23/inkcheck) already offers bounded, deterministic mechanical QA with a mature search portfolio and exact replay. InkSwarm never claimed that work was naïve graph traversal. Its hypothesis was narrower: a finite population that allocates work toward unusual, deep, underexplored narrative states may improve rare-state yield or provide complementary discoveries.
 
-InkBench is designed to falsify that hypothesis. The casino, false-novelty, boring-corridor, loop, delay, and shallow controls are intentionally hostile to plausible InkSwarm failure modes. New biological mechanisms belong in InkSwarm only after a benchmark demonstrates the failure they solve.
+InkBench was designed to falsify that hypothesis, and it did. The casino, false-novelty, boring-corridor, loop, delay, and shallow controls were intentionally hostile to plausible InkSwarm failure modes, and across those families the population approach did not earn its budget. The research line is **closed** — see the [closeout](docs/inkswarm-closeout.md) for the evidence trail and for what deliberately did *not* close.
+
+The separation is why that verdict is trustworthy: the benchmark was never the swarm's own scoreboard. It remains a neutral harness for any searcher, and a new mechanism would still have to clear these same controls under a new algorithm id.
 
 ## Development
 

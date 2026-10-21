@@ -1,6 +1,18 @@
 # Changelog
 ## Unreleased
 
+- **Close the InkSwarm research line as unsupported.** Across the measured fixture families and
+  budgets the population approach produced no exclusive discovery and spent its budget less
+  effectively than the simple baselines on most failure classes. Recorded in
+  `docs/inkswarm-closeout.md` with the evidence trail; the README and milestone sequence now
+  state the verdict instead of a forward plan.
+- The `swarm` searcher is **retained** as a frozen comparison baseline (`minimal-colony-v1`).
+  It is not dead code: deleting it would silently change what published v0.2.0/v0.3.0 results
+  compared against and would break reproduction of historical matrices.
+- InkBench itself is unaffected. It remains a neutral harness for any searcher, and its open
+  measurement-validity work stands on its own.
+## Unreleased
+
 - Add the `heresy2-30` authored-planted fixture: 30 disclosed mutations across 30 knots and
   14 fault types in Heresy II, with one exact replay witness each and a checksum-pinned
   `inklecate` 1.2.1 artifact. Doubles the authored-planted tier to 50 replay-verified bugs

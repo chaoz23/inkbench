@@ -40,7 +40,13 @@ Implemented ahead of the remaining v0.2 items: first-class planned wall-time bud
 - Atomic exact resume, revision-bound witnesses, learning curves, edit-class competence, complementarity, storage, and break-even accounting. **Implemented.**
 - Repeated validation and blind evaluation sequences demonstrating creator-cost value. **Evidence remains open.**
 
-## InkSwarm research sequence
+## InkSwarm research sequence (CLOSED 2026-10-21 — hypothesis unsupported)
+
+> **Closed.** Steps 1–3 ran; nothing cleared the preregistered threshold that steps 4 and 5 were
+> gated on, so they are abandoned rather than pending. The measured result was no exclusive
+> discovery and weaker budget use than the simple baselines on most failure classes. See the
+> [closeout](inkswarm-closeout.md). The discipline below is retained because it is the right
+> shape for *any* future searcher, under a new algorithm id.
 
 Only promote a mechanism after a benchmark shows the failure it addresses:
 
