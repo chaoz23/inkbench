@@ -1,4 +1,19 @@
 # Changelog
+## Unreleased
+
+- Add the `heresy2-30` authored-planted fixture: 30 disclosed mutations across 30 knots and
+  14 fault types in Heresy II, with one exact replay witness each and a checksum-pinned
+  `inklecate` 1.2.1 artifact. Doubles the authored-planted tier to 50 replay-verified bugs
+  and adds a second, structurally different family (`stitch-heavy-random-authored-story`,
+  21-file bundle, difficulty 10) alongside the choice-dense Intercept.
+- Generalise the witness-replay test across every authored-planted story; it now asserts all
+  50 witnesses reach their own oracle.
+- Corpus manifest and schema now carry a per-case `difficulty`, and case `id`/`family`/
+  `mutationSet` accept both stories. `loadAuthoredPlantedFixture` reads `difficulty` from the
+  manifest instead of a hardcoded `5` (no change for `the-intercept-20`, which declares 5).
+- The `swarm-novelty` and `swarm-colony` ablation searchers are intentionally NOT included:
+  they alter the shipped `swarm` algorithm and would break longitudinal comparability. They
+  stay pinned at tag `heresy2-30-fixture-2026-08`.
 
 ## 0.3.0 - 2026-08-20
 
