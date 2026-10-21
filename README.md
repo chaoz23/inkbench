@@ -18,7 +18,7 @@ The 0.3.0 release adds the validity work tracked in issues #2–#9: structural-e
 - Random, deterministic systematic, simple coverage-guided, and minimal InkSwarm explorers.
 - An optional adapter for the actual [InkCheck](https://github.com/chaoz23/inkcheck) CLI—not a favorable reimplementation.
 - A separate authored-project tier containing Dog Ink Adventure, The Intercept, and Heresy II with pinned upstream commits, licenses, source/artifact hashes, and official `inklecate` 1.2.1 compiled artifacts.
-- A separate authored-planted tier containing 20 disclosed, replay-verified mutations across 16 locations and 19 fault types in The Intercept.
+- A separate authored-planted tier containing 50 disclosed, replay-verified mutations across two stories: 20 across 16 locations and 19 fault types in The Intercept, and 30 across 30 knots and 14 fault types in Heresy II.
 - Transition, launch, wall-time, CPU-time, empirical coverage, first-discovery, and replay evidence.
 - NDJSON, CSV, JSON, Markdown, generated `.ink`, and manifest outputs.
 - Detection-probability cells, right-censored survival points, family competence maps, and paired exclusive/union discoveries.
@@ -260,7 +260,7 @@ Methodology checks are executable rather than prose-only. `inkbench fixtures aud
 - Never convert authored-project coverage into planted-bug yield or survival data.
 - Never describe the authored-planted mutations as defects in the clean upstream Intercept.
 
-The v0.1 generated-fixture oracle is an explicit global set only when the planted defect is reached. The authored-planted derivative broadens this to 19 fault types and carries checksum-pinned witnesses for all 20 oracles. The next measurement-validity milestone adds official replay of generated-fixture witnesses, exhaustive denominators for small fixtures, root-replay budget regimes, and stronger statistical intervals. See [methodology](docs/methodology.md) and [milestones](docs/milestones.md).
+The v0.1 generated-fixture oracle is an explicit global set only when the planted defect is reached. The authored-planted derivative broadens this to 19 fault types and carries checksum-pinned witnesses for all 50 oracles across both derivatives. The next measurement-validity milestone adds official replay of generated-fixture witnesses, exhaustive denominators for small fixtures, root-replay budget regimes, and stronger statistical intervals. See [methodology](docs/methodology.md) and [milestones](docs/milestones.md).
 
 The checked [v0.1 development matrix](docs/v0.1-development-results.md) is deliberately candid: the current minimal swarm produced no exclusive discovery in 792 small development cells and was weaker than the simple controls in several families. It is a forcing function for the next experiments, not a promotional benchmark result.
 

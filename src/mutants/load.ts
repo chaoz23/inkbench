@@ -18,6 +18,7 @@ export interface AuthoredPlantedCorpusCase {
   family: AuthoredStoryFamily;
   directory: string;
   mutationSet: string;
+  difficulty: number;
   source: CorpusSourceMetadata & {
     licenseSha256: string;
     upstreamSourceSha256: string;
@@ -183,7 +184,7 @@ export function loadAuthoredPlantedFixture(id: string): AuthoredPlantedFixture {
       fixtureId: `authored-planted-${entry.id}`,
       family: entry.family,
       seed: 0,
-      difficulty: 5,
+      difficulty: entry.difficulty,
       dimensions: maxDimensions(entry.bugs),
       parameters: {
         storyId: entry.id,
