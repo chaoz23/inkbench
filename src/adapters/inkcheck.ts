@@ -9,6 +9,7 @@ import { benchmarkRunId, executionFingerprint, resolveCommandPath } from "../cor
 import { parseInkJson } from "../core/ink-json.js";
 import { compiledFixtureStory } from "../core/runtime.js";
 import { INKBENCH_VERSION, RUN_CONTRACT_VERSION, RUN_REPORT_SCHEMA_VERSION, type BugDiscovery, type ResourceStopReason, type ResourceUsage, type RunReport, type RunRequest } from "../core/types.js";
+import { validateLongRunTelemetryV1, type LongRunTelemetryV1 } from "./inkcheck-telemetry.js";
 
 interface InkCheckEnding {
   choiceIndices?: number[];
@@ -23,7 +24,7 @@ interface InkCheckReport {
   elapsedMs?: number;
   effectiveConfiguration?: { concurrency?: number; concurrencyMode?: string };
   compile?: { success?: boolean };
-  resources?: { peakMemoryBytes?: number; memoryCapBytes?: number; memorySearchLimitBytes?: number };
+  resources?: { peakMemoryBytes?: number; memoryCapBytes?: number; memorySearchLimitBytes?: number; longRunTelemetry?: unknown };
   explore?: {
     statesExplored?: number;
     endingsFound?: InkCheckEnding[];
@@ -54,6 +55,9 @@ interface InkCheckStreamEvent {
     runtimeErrors?: number;
   };
 }
+
+/** Field-only contract diagnostics must not be replaced by private CLI stderr. */
+class InkCheckContractError extends Error {}
 
 function escaped(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -199,9 +203,14 @@ function parseInkCheckReport(path: string, request: RunRequest): {
   }
   if (firstEvent?.type === "run_start") {
     let terminal: InkCheckStreamEvent | undefined;
+    let started = false;
     const consume = (event: InkCheckStreamEvent) => {
-      if (event.schemaVersion !== 1) throw new SyntaxError(`unsupported InkCheck stream schema ${event.schemaVersion ?? "missing"}`);
-      if (event.type === "ending") {
+      if (terminal) throw new InkCheckContractError("InkCheck evidence stream contains an event after its terminal record");
+      if (event.schemaVersion !== 1) throw new InkCheckContractError("unsupported InkCheck evidence stream schema");
+      if (event.type === "run_start") {
+        if (started) throw new InkCheckContractError("InkCheck evidence stream contains a duplicate start record");
+        started = true;
+      } else if (event.type === "ending") {
         replayer.replay({
           ...(event.choiceIndices === undefined ? {} : { choiceIndices: event.choiceIndices }),
           ...(event.firstDiscoveredAtState === undefined ? {} : { firstDiscoveredAtState: event.firstDiscoveredAtState }),
@@ -307,6 +316,7 @@ function failedAdapterRun(
   wallMs: number,
   message: string,
   status: "adapter-unavailable" | "runtime-error",
+  externalProcessWallMs?: number,
 ): RunReport {
   const fingerprint = executionFingerprint(request);
   const primaryBudget = request.timeBudgetMs === undefined
@@ -347,6 +357,7 @@ function failedAdapterRun(
     timing: {
       wallMs,
       cpuMs: null,
+      ...(externalProcessWallMs === undefined ? {} : { externalProcessWallMs }),
       discoveryTimeOrigin: "final-report",
       phases: { setupMs: null, compileLoadMs: null, adapterStartupMs: null, searchMs: null, scoringMs: null, replayScoringMs: null, evidenceSerializationMs: null, finalizationMs: null },
     },
@@ -362,12 +373,17 @@ function failedAdapterRun(
   };
 }
 
-function inkcheckResourceUsage(parsed: InkCheckReport, request: RunRequest, stopReason: ResourceStopReason): ResourceUsage | null {
+function inkcheckResourceUsage(
+  parsed: InkCheckReport,
+  request: RunRequest,
+  stopReason: ResourceStopReason,
+  longRunTelemetry: LongRunTelemetryV1 | undefined,
+): ResourceUsage | null {
   const peakHeap = parsed.resources?.peakMemoryBytes ?? null;
   const configuredCap = request.resources?.maxMemoryMb === undefined ? null : request.resources.maxMemoryMb * 1024 * 1024;
   const memoryCapBytes = parsed.resources?.memoryCapBytes ?? configuredCap;
   const searchMemoryLimitBytes = parsed.resources?.memorySearchLimitBytes ?? memoryCapBytes;
-  if (peakHeap === null && memoryCapBytes === null && searchMemoryLimitBytes === null) return null;
+  if (peakHeap === null && memoryCapBytes === null && searchMemoryLimitBytes === null && longRunTelemetry === undefined) return null;
   return {
     provenance: "external-adapter",
     limits: {
@@ -388,6 +404,7 @@ function inkcheckResourceUsage(parsed: InkCheckReport, request: RunRequest, stop
     snapshots: null,
     coverageIndexBytes: null,
     peakCoverageIndexBytes: null,
+    ...(longRunTelemetry === undefined ? {} : { longRunTelemetry }),
   };
 }
 
@@ -491,18 +508,30 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
     const reportBytes = statSync(stdoutPath).size;
     const childWallMs = performance.now() - spawnStarted;
     if (child.error && (child.error as NodeJS.ErrnoException).code === "ENOENT") {
-      return failedAdapterRun(request, runId, childWallMs, child.error.message, "adapter-unavailable");
+      return failedAdapterRun(request, runId, performance.now() - started, child.error.message, "adapter-unavailable");
     }
     let parsed: InkCheckReport;
     let replay: ReplayResult;
     let transport: "bounded-stream" | "full-json";
+    let longRunTelemetry: LongRunTelemetryV1 | undefined;
     const scoringStarted = performance.now();
     try {
       ({ parsed, replay, transport } = parseInkCheckReport(stdoutPath, request));
+      // Absence is a legacy capability boundary. A present but invalid receipt
+      // is failed evidence, never silently downgraded to missing telemetry.
+      if (parsed.resources != null && Object.hasOwn(parsed.resources, "longRunTelemetry")) {
+        try {
+          longRunTelemetry = validateLongRunTelemetryV1(parsed.resources.longRunTelemetry);
+        } catch (error) {
+          throw new InkCheckContractError(`invalid InkCheck long-run telemetry: ${error instanceof Error ? error.message : "invalid receipt"}`);
+        }
+      }
     } catch (error) {
       const parseError = error instanceof Error ? error.message : String(error);
-      const detail = child.error?.message || stderr.trim() || parseError || `exit status ${child.status ?? "unknown"}`;
-      return failedAdapterRun(request, runId, childWallMs, `InkCheck returned no complete evidence report: ${detail.slice(0, 1_000)}`, "runtime-error");
+      const detail = error instanceof InkCheckContractError
+        ? error.message
+        : child.error?.message || stderr.trim() || parseError || `exit status ${child.status ?? "unknown"}`;
+      return failedAdapterRun(request, runId, performance.now() - started, `InkCheck returned no complete evidence report: ${detail.slice(0, 1_000)}`, "runtime-error", childWallMs);
     }
     const scoringEnded = performance.now();
     const truncated = parsed.explore?.truncatedBy;
@@ -567,12 +596,13 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
       timing: {
         wallMs,
         cpuMs: null,
+        externalProcessWallMs: childWallMs,
         discoveryTimeOrigin: transport === "bounded-stream" ? "tool-global" : "final-report",
         phases: {
           setupMs: spawnStarted - started,
-          compileLoadMs: null,
+          compileLoadMs: longRunTelemetry?.phases.compilationMs ?? null,
           adapterStartupMs: spawnStarted - started,
-          searchMs: childWallMs,
+          searchMs: longRunTelemetry?.phases.searchActiveMs ?? null,
           scoringMs: scoringEnded - scoringStarted,
           replayScoringMs: scoringEnded - scoringStarted,
           evidenceSerializationMs: null,
@@ -585,7 +615,7 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
         mode: parsed.explore?.execution?.mode ?? parsed.effectiveConfiguration?.concurrencyMode ?? "unknown",
       },
       stopReason: compileFailed || processFailed ? "error" : stopReason,
-      resources: inkcheckResourceUsage(parsed, request, stopReason),
+      resources: inkcheckResourceUsage(parsed, request, stopReason, longRunTelemetry),
       runtime: {
         harnessVersion: INKBENCH_VERSION,
         runContractVersion: RUN_CONTRACT_VERSION,
@@ -617,6 +647,13 @@ export function runInkCheckAdapter(request: RunRequest): RunReport {
           : ["InkCheck portfolio finding positions are pass-local, so discovery timing is final-only and must not enter survival curves."]),
         "InkCheck does not expose the full InkBench empirical edge/state metric set, so coverage is null; its native heap telemetry is retained separately with external-adapter provenance.",
         "External child CPU time and peak RSS are unavailable from the current InkCheck contract and remain null rather than being inferred.",
+        ...(longRunTelemetry === undefined
+          ? ["Native long-run telemetry is unavailable from this CLI. Search-active and compilation timing remain null; whole-child wall time is recorded separately."]
+          : [
+              "Validated source-native long-run telemetry is retained unchanged under resources.longRunTelemetry. Search and compilation timing use only its searchActiveMs and compilationMs; whole-child wall time remains separate.",
+              "Native setup/finalization phases are inclusive, may overlap component phases, and exclude terminal JSON/stdout; adapter scoring/finalization remain adapter measurements. Do not sum them into an end-to-end duration.",
+              "Retained-byte and sampled process-RSS integrals cover first-to-last live observations within each pass, not whole-run cost or peak RSS. Pass-local identities can overlap; empty or zero-duration intervals do not establish measured efficiency.",
+            ]),
       ],
     };
   } finally {

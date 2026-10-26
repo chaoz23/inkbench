@@ -14,6 +14,8 @@ The 0.3.0 release adds the validity work tracked in issues #2–#9: structural-e
 
 ## What ships in 0.3.0
 
+Unreleased adapter work connects InkCheck's bounded native cost/phase ledger, separates active search from whole-child timing, and validates durable receipts without inventing missing legacy observations. See the [measurement contract and next-proof checklist](docs/inkcheck-cost-phase-ledger.md). This is instrumentation, not a new search result or policy promotion.
+
 - Deterministic procedural generators for all eleven initial bug families.
 - Separate fixture, search, and Ink-runtime seeds.
 - One shared instrumented runtime and opaque checkpoint API for internal strategies.
