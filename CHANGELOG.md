@@ -1,6 +1,8 @@
 # Changelog
+
 ## Unreleased
 
+- Connect InkCheck schema-v1 cost/phase receipts to run reports for bounded NDJSON and full-JSON fallback. Preserve exact pass-local integrals, interval bounds and separate yield categories; reject malformed receipts during ingestion and durable summary/audit loading while leaving absent legacy telemetry unavailable. Separate whole-child wall time from native active-search/compilation phases, retain wrapper timing and null CPU/peak-RSS facts, and version the external adapter identity without changing report schema v4 or reinterpreting historical artifacts. This is a measurement bridge, not a search-policy change, comparative result, or release.
 - **Close the InkSwarm research line as unsupported.** Across the measured fixture families and
   budgets the population approach produced no exclusive discovery and spent its budget less
   effectively than the simple baselines on most failure classes. Recorded in
@@ -11,8 +13,6 @@
   compared against and would break reproduction of historical matrices.
 - InkBench itself is unaffected. It remains a neutral harness for any searcher, and its open
   measurement-validity work stands on its own.
-## Unreleased
-
 - Add the `heresy2-30` authored-planted fixture: 30 disclosed mutations across 30 knots and
   14 fault types in Heresy II, with one exact replay witness each and a checksum-pinned
   `inklecate` 1.2.1 artifact. Doubles the authored-planted tier to 50 replay-verified bugs

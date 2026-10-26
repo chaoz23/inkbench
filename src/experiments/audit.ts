@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fixtureSourceHash, hash, stableJson } from "../core/hash.js";
 import { InstrumentedController } from "../core/runtime.js";
 import type { ExperimentConfig, RunReport } from "../core/types.js";
-import { assertSummarizableRuns } from "../core/validation.js";
+import { assertRunTelemetryContract, assertSummarizableRuns, RunTelemetryValidationError } from "../core/validation.js";
 import { generateFixture } from "../fixtures/generate.js";
 import { plannedExperimentCells } from "./run.js";
 
@@ -51,7 +51,15 @@ export function auditGeneratedMatrix(artifactDirectory: string): MatrixAuditRepo
   const reports = reportFiles.map(({ report }) => report);
   const findings: MatrixAuditFinding[] = [];
   const add = (severity: MatrixAuditFinding["severity"], code: string, message: string, runId: string | null = null) => findings.push({ severity, code, message, runId });
-  try { assertSummarizableRuns(reports); } catch (error) { add("error", "run-identity", error instanceof Error ? error.message : String(error)); }
+  for (const report of reports) {
+    try { assertRunTelemetryContract(report); } catch (error) {
+      add("error", "invalid-telemetry", error instanceof Error ? error.message : String(error), report.runId);
+    }
+  }
+  try { assertSummarizableRuns(reports); } catch (error) {
+    // The per-report pass already identifies every invalid ledger and its run ID.
+    if (!(error instanceof RunTelemetryValidationError)) add("error", "run-identity", error instanceof Error ? error.message : String(error));
+  }
   const ids = reports.map((report) => report.runId);
   const duplicates = ids.length - new Set(ids).size;
   if (duplicates > 0) add("error", "duplicate-run-id", `${duplicates} duplicate run IDs`);
@@ -90,6 +98,16 @@ export function auditGeneratedMatrix(artifactDirectory: string): MatrixAuditRepo
       if (value !== null && (!Number.isFinite(value) || value < 0)) add("error", "timing-phase", `${phase} is invalid`, report.runId);
     }
     if (report.algorithm === "inkcheck" && report.timing.cpuMs === null) add("information", "child-cpu-unavailable", "external child CPU is unavailable and remains null", report.runId);
+    if (report.algorithm === "inkcheck") {
+      if (!report.resources || !Object.hasOwn(report.resources, "longRunTelemetry")) {
+        add("information", "native-cost-unavailable", "native retained-cost observations are unavailable; legacy timing is not reconstructed", report.runId);
+      } else {
+        const telemetry = report.resources.longRunTelemetry;
+        if (telemetry && Array.isArray(telemetry.passes) && telemetry.passes.length === 0) {
+          add("information", "native-cost-no-pass-observations", "native phase telemetry contains no compatible pass observations; no retained-cost interval is inferred", report.runId);
+        }
+      }
+    }
   }
   let witnessReplays = 0;
   let witnessReplayFailures = 0;

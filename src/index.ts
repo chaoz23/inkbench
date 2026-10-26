@@ -6,6 +6,8 @@ export { benchmarkRunId, executionFingerprint, executionFingerprintDigest, harne
 export { runBenchmark } from "./core/run.js";
 export { runBenchmarkIsolated } from "./core/isolated.js";
 export { oracleNeutralInkSource } from "./adapters/inkcheck.js";
+export { validateLongRunTelemetryV1 } from "./adapters/inkcheck-telemetry.js";
+export type * from "./adapters/inkcheck-telemetry.js";
 export type { IsolatedRunOptions } from "./core/isolated.js";
 export { InstrumentedController } from "./core/runtime.js";
 export { oracleNeutralRawStateKey } from "./core/runtime.js";

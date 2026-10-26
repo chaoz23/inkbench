@@ -74,7 +74,7 @@ function packageLockSha256(): string | null {
 }
 
 export function executionFingerprint(request: RunRequest): ExecutionFingerprint {
-  const algorithmVersion = request.algorithm === "inkcheck" ? "external-adapter-v4" : getSearcher(request.algorithm).version;
+  const algorithmVersion = request.algorithm === "inkcheck" ? "external-adapter-v6" : getSearcher(request.algorithm).version;
   const inkcheckCommand = request.algorithm === "inkcheck" ? request.inkcheckCommand ?? "inkcheck" : undefined;
   const resolvedInkCheckCommand = inkcheckCommand ? resolveCommandPath(inkcheckCommand) : null;
   const inkcheckCommandSha256 = resolvedInkCheckCommand

@@ -96,6 +96,7 @@
         "wallMs": { "type": "number", "minimum": 0 },
         "cpuMs": { "type": ["number", "null"], "minimum": 0 },
         "discoveryTimeOrigin": { "enum": ["search-active", "tool-global", "final-report"] },
+        "externalProcessWallMs": { "type": "number", "minimum": 0 },
         "phases": {
           "type": "object",
           "required": ["setupMs", "compileLoadMs", "adapterStartupMs", "searchMs", "scoringMs", "replayScoringMs", "evidenceSerializationMs", "finalizationMs"],
@@ -140,7 +141,8 @@
         "process": { "type": "object", "required": ["peak", "final"] },
         "snapshots": { "type": ["object", "null"], "required": ["created", "released", "current", "peak", "explicitReferences", "currentBytes", "peakBytes", "checkpointBytes", "peakCheckpointBytes"] },
         "coverageIndexBytes": { "type": ["integer", "null"], "minimum": 0 },
-        "peakCoverageIndexBytes": { "type": ["integer", "null"], "minimum": 0 }
+        "peakCoverageIndexBytes": { "type": ["integer", "null"], "minimum": 0 },
+        "longRunTelemetry": { "$ref": "#/$defs/longRunTelemetryV1" }
       }
     },
     "runtime": {
@@ -158,5 +160,425 @@
     "status": { "enum": ["completed", "resource-stopped", "adapter-unavailable", "compile-error", "runtime-error"] },
     "error": { "type": ["string", "null"] },
     "notes": { "type": "array", "items": { "type": "string" } }
+  },
+  "$defs": {
+    "longRunSafeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "longRunNullableSafeInteger": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "longRunNullableRate": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "longRunPhaseDurationsV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "setupMs",
+        "compilationMs",
+        "sourceScanMs",
+        "searchActiveMs",
+        "minimumReproductionMs",
+        "checkpointWriteMs",
+        "checkpointReopenMs",
+        "replayScoringMs",
+        "reportEnrichmentMs",
+        "reportWriteMs",
+        "finalizationMs"
+      ],
+      "properties": {
+        "setupMs": {
+          "$ref": "#/$defs/longRunSafeInteger"
+        },
+        "compilationMs": {
+          "$ref": "#/$defs/longRunSafeInteger"
+        },
+        "sourceScanMs": {
+          "$ref": "#/$defs/longRunSafeInteger"
+        },
+        "searchActiveMs": {
+          "$ref": "#/$defs/longRunSafeInteger"
+        },
+        "minimumReproductionMs": {
+          "$ref": "#/$defs/longRunSafeInteger"
+        },
+        "checkpointWriteMs": {
+          "$ref": "#/$defs/longRunSafeInteger"
+        },
+        "checkpointReopenMs": {
+          "$ref": "#/$defs/longRunSafeInteger"
+        },
+        "replayScoringMs": {
+          "$ref": "#/$defs/longRunSafeInteger"
+        },
+        "reportEnrichmentMs": {
+          "$ref": "#/$defs/longRunSafeInteger"
+        },
+        "reportWriteMs": {
+          "$ref": "#/$defs/longRunSafeInteger"
+        },
+        "finalizationMs": {
+          "$ref": "#/$defs/longRunSafeInteger"
+        }
+      }
+    },
+    "longRunLogicalIntegralV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "basis",
+        "byteMillisecondsTimesTwo",
+        "divisor"
+      ],
+      "properties": {
+        "basis": {
+          "const": "deterministic_logical_accounted_bytes"
+        },
+        "byteMillisecondsTimesTwo": {
+          "type": "string",
+          "maxLength": 33,
+          "pattern": "^(0|[1-9][0-9]{0,32})(?![\\s\\S])"
+        },
+        "divisor": {
+          "const": 2
+        }
+      }
+    },
+    "longRunProcessRssIntegralV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "basis",
+        "byteMillisecondsTimesTwo",
+        "divisor"
+      ],
+      "properties": {
+        "basis": {
+          "const": "observed_process_rss_bytes"
+        },
+        "byteMillisecondsTimesTwo": {
+          "type": "string",
+          "maxLength": 33,
+          "pattern": "^(0|[1-9][0-9]{0,32})(?![\\s\\S])"
+        },
+        "divisor": {
+          "const": 2
+        }
+      }
+    },
+    "longRunYieldRateV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identities",
+        "identitiesPerMillionTransitions",
+        "identitiesPerSearchActiveMinute",
+        "identitiesPerRetainedGiBMinute"
+      ],
+      "properties": {
+        "identities": {
+          "$ref": "#/$defs/longRunSafeInteger"
+        },
+        "identitiesPerMillionTransitions": {
+          "$ref": "#/$defs/longRunNullableRate"
+        },
+        "identitiesPerSearchActiveMinute": {
+          "$ref": "#/$defs/longRunNullableRate"
+        },
+        "identitiesPerRetainedGiBMinute": {
+          "$ref": "#/$defs/longRunNullableRate"
+        }
+      }
+    },
+    "longRunUnobservedYieldRateV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identities",
+        "identitiesPerMillionTransitions",
+        "identitiesPerSearchActiveMinute",
+        "identitiesPerRetainedGiBMinute"
+      ],
+      "properties": {
+        "identities": {
+          "const": 0
+        },
+        "identitiesPerMillionTransitions": {
+          "type": "null"
+        },
+        "identitiesPerSearchActiveMinute": {
+          "type": "null"
+        },
+        "identitiesPerRetainedGiBMinute": {
+          "type": "null"
+        }
+      }
+    },
+    "longRunYieldRatesV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "critical",
+        "intent",
+        "authoredCoverage",
+        "visibleOutcomes",
+        "semanticTransitions",
+        "terminalVariants"
+      ],
+      "properties": {
+        "critical": {
+          "$ref": "#/$defs/longRunYieldRateV1"
+        },
+        "intent": {
+          "$ref": "#/$defs/longRunYieldRateV1"
+        },
+        "authoredCoverage": {
+          "$ref": "#/$defs/longRunYieldRateV1"
+        },
+        "visibleOutcomes": {
+          "$ref": "#/$defs/longRunYieldRateV1"
+        },
+        "semanticTransitions": {
+          "$ref": "#/$defs/longRunYieldRateV1"
+        },
+        "terminalVariants": {
+          "$ref": "#/$defs/longRunYieldRateV1"
+        }
+      }
+    },
+    "longRunUnobservedYieldRatesV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "critical",
+        "intent",
+        "authoredCoverage",
+        "visibleOutcomes",
+        "semanticTransitions",
+        "terminalVariants"
+      ],
+      "properties": {
+        "critical": {
+          "$ref": "#/$defs/longRunUnobservedYieldRateV1"
+        },
+        "intent": {
+          "$ref": "#/$defs/longRunUnobservedYieldRateV1"
+        },
+        "authoredCoverage": {
+          "$ref": "#/$defs/longRunUnobservedYieldRateV1"
+        },
+        "visibleOutcomes": {
+          "$ref": "#/$defs/longRunUnobservedYieldRateV1"
+        },
+        "semanticTransitions": {
+          "$ref": "#/$defs/longRunUnobservedYieldRateV1"
+        },
+        "terminalVariants": {
+          "$ref": "#/$defs/longRunUnobservedYieldRateV1"
+        }
+      }
+    },
+    "longRunPassCostV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "pass",
+        "samplesObserved",
+        "firstObservationElapsedMs",
+        "lastObservationElapsedMs",
+        "searchActiveMs",
+        "transitions",
+        "logicalRetained",
+        "processRss",
+        "yield"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "pass": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._:=/-]{1,128}(?![\\s\\S])"
+        },
+        "samplesObserved": {
+          "$ref": "#/$defs/longRunSafeInteger"
+        },
+        "firstObservationElapsedMs": {
+          "$ref": "#/$defs/longRunNullableSafeInteger"
+        },
+        "lastObservationElapsedMs": {
+          "$ref": "#/$defs/longRunNullableSafeInteger"
+        },
+        "searchActiveMs": {
+          "$ref": "#/$defs/longRunSafeInteger"
+        },
+        "transitions": {
+          "$ref": "#/$defs/longRunSafeInteger"
+        },
+        "logicalRetained": {
+          "$ref": "#/$defs/longRunLogicalIntegralV1"
+        },
+        "processRss": {
+          "$ref": "#/$defs/longRunProcessRssIntegralV1"
+        },
+        "yield": {
+          "$ref": "#/$defs/longRunYieldRatesV1"
+        }
+      },
+      "description": "Pass-local costs and yield cover only the first-to-last live observation interval. The runtime validator also checks elapsed-bound differences, ordered sample counts, unique pass labels, and exact rate/denominator relationships; these relations cannot be expressed by this portable JSON Schema.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "samplesObserved": {
+                "const": 0
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "firstObservationElapsedMs": {
+                "const": null
+              },
+              "lastObservationElapsedMs": {
+                "const": null
+              },
+              "searchActiveMs": {
+                "const": 0
+              },
+              "transitions": {
+                "const": 0
+              },
+              "logicalRetained": {
+                "properties": {
+                  "byteMillisecondsTimesTwo": {
+                    "const": "0"
+                  }
+                }
+              },
+              "processRss": {
+                "properties": {
+                  "byteMillisecondsTimesTwo": {
+                    "const": "0"
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "firstObservationElapsedMs": {
+                "$ref": "#/$defs/longRunSafeInteger"
+              },
+              "lastObservationElapsedMs": {
+                "$ref": "#/$defs/longRunSafeInteger"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "samplesObserved": {
+                "maximum": 1
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "searchActiveMs": {
+                "const": 0
+              },
+              "transitions": {
+                "const": 0
+              },
+              "logicalRetained": {
+                "properties": {
+                  "byteMillisecondsTimesTwo": {
+                    "const": "0"
+                  }
+                }
+              },
+              "processRss": {
+                "properties": {
+                  "byteMillisecondsTimesTwo": {
+                    "const": "0"
+                  }
+                }
+              },
+              "yield": {
+                "$ref": "#/$defs/longRunUnobservedYieldRatesV1"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "searchActiveMs": {
+                "const": 0
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "logicalRetained": {
+                "properties": {
+                  "byteMillisecondsTimesTwo": {
+                    "const": "0"
+                  }
+                }
+              },
+              "processRss": {
+                "properties": {
+                  "byteMillisecondsTimesTwo": {
+                    "const": "0"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "longRunTelemetryV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "phases",
+        "passes"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "phases": {
+          "$ref": "#/$defs/longRunPhaseDurationsV1"
+        },
+        "passes": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/longRunPassCostV1"
+          }
+        }
+      },
+      "description": "Optional InkCheck-native schema-v1 observational receipt. Absence means unavailable, not zero cost. Phases may overlap inclusive parents and must not be summed. Passes and rates must not be pooled across overlapping identities; an empty pass list supplies no sampled cost interval. Process RSS integrals are sampled process-scoped costs, not peak RSS or exclusive ownership."
+    }
   }
 }

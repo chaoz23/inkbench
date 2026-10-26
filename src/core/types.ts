@@ -1,3 +1,5 @@
+import type { LongRunTelemetryV1 } from "../adapters/inkcheck-telemetry.js";
+
 export const SCHEMA_VERSION = 1 as const;
 export const RUN_REPORT_SCHEMA_VERSION = 4 as const;
 export const PROGRESS_SCHEMA_VERSION = 2 as const;
@@ -297,6 +299,8 @@ export interface InkCheckOptions {
 export interface RunTiming {
   wallMs: number;
   cpuMs: number | null;
+  /** Observed whole external process duration, not its search-active phase. Absent on legacy/internal reports. */
+  externalProcessWallMs?: number;
   /** Clock used by BugDiscovery.elapsedMs. */
   discoveryTimeOrigin: "search-active" | "tool-global" | "final-report";
   phases: {
@@ -368,6 +372,8 @@ export interface ResourceUsage {
   snapshots: SnapshotMemoryUsage | null;
   coverageIndexBytes: number | null;
   peakCoverageIndexBytes: number | null;
+  /** Validated source-native receipt. Inclusive phases and pass-local yields must not be summed. */
+  longRunTelemetry?: LongRunTelemetryV1;
 }
 
 export interface ExecutionFingerprint {
